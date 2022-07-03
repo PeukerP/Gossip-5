@@ -22,5 +22,10 @@ Networking:
   Oder auch nur fixe Anzahl (init am Anfang) an recv proc + epoll auf socketfds. Teile socketfds auf procs auf.
 - Wie viele Procs möglich, damit es noch skaliert?
 
+
+Oder: asyncio:
+- server, der die ganze Zeit mit recv beschäftigt ist, und Nachricht an API Layer weitergibt
+- Bietet auch methode zum schreiben an. Wir müssen read/write Ende eines Transports sichern
+
 Serialization/Deserialization:
 Von Hand; Protobuf ist ganz cool
