@@ -5,8 +5,6 @@ from configobj import ConfigObj
 
 from connection import Server
 
-# TODO: bootstrapping
-
 
 def split_address_into_tuple(address):
     res = None
@@ -30,9 +28,9 @@ def split_address_into_tuple(address):
 
 def parse_config_file(config_file):
     options = ['cache_size', 'degree',
-              'bootstrapper', 'p2p_address', 'api_address']
+               'bootstrapper', 'p2p_address', 'api_address']
     config = ConfigObj(config_file)
-    #config.read()
+    # config.read()
     if 'gossip' not in config:
         print("section 'gossip' is missing in .ini file")
         exit(1)
@@ -40,7 +38,7 @@ def parse_config_file(config_file):
     if 'hostkey' not in config:
         print("'hostkey' is missing in .ini file")
         exit(1)
-    
+
     hostkey = config['hostkey']
 
     # Read the value to the corresponding global variables
@@ -73,21 +71,22 @@ def main():
     api_send_queue = asyncio.PriorityQueue()
     api_recv_queue = asyncio.PriorityQueue()
 
-    p2p_send_lock = asyncio.Lock()
-    p2p_recv_lock = asyncio.Lock()
-    api_send_lock = asyncio.Lock()
-    api_recv_lock = asyncio.Lock()
-
-    print(configs)
+    # Send queue: gossip->out
+    #   Items: (prio, (address, port, msg_type, msg (without header)))
+    # Recv queue: out->gossip
+    #   Items: (prio, (msg_size, msg_type, msg))
 
     # We also need to init and start the Gossip handler here
 
     # Start API Server
-    api_server = Server(configs['api_address'][0], configs['api_address'][1], api_send_queue,
-                            api_recv_queue, api_send_lock, api_recv_lock)
+    api_server = Server(
+        configs['api_address'][0], configs['api_address'][1], api_send_queue, api_recv_queue)
     api_server.start()
 
-    # Here goes the P2P server 
+    # Start P2P server
+    p2p_server = Server(
+        configs['p2p_address'][0], configs['p2p_address'][1], p2p_send_queue, p2p_recv_queue)
+    p2p_server.start()
 
 
 if __name__ == "__main__":
