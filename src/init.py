@@ -78,15 +78,24 @@ def main():
 
     # We also need to init and start the Gossip handler here
 
+    eloop = asyncio.new_event_loop()
+
     # Start API Server
     api_server = Server(
-        configs['api_address'][0], configs['api_address'][1], api_send_queue, api_recv_queue)
+        configs['api_address'][0], configs['api_address'][1], api_send_queue, api_recv_queue, eloop)
     api_server.start()
 
     # Start P2P server
     p2p_server = Server(
-        configs['p2p_address'][0], configs['p2p_address'][1], p2p_send_queue, p2p_recv_queue)
+        configs['p2p_address'][0], configs['p2p_address'][1], p2p_send_queue, p2p_recv_queue, eloop)
     p2p_server.start()
+
+    try:
+        eloop.run_forever()
+    except KeyboardInterrupt as e:
+        eloop.stop()
+
+
 
 
 if __name__ == "__main__":

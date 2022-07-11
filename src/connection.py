@@ -6,7 +6,7 @@ from util import MessageType
 
 class Server():
 
-    def __init__(self, host, port, send_queue: asyncio.PriorityQueue, recv_queue: asyncio.PriorityQueue):
+    def __init__(self, host, port, send_queue: asyncio.PriorityQueue, recv_queue: asyncio.PriorityQueue, event_loop):
 
         self.host = host
         self.port = port
@@ -25,6 +25,7 @@ class Server():
         self.send_queue = send_queue
         # out -> Gossip
         self.recv_queue = recv_queue
+        self.eloop = event_loop
 
     async def __establish_connection(self, host, port):
         # TODO: POW? Authentication?
@@ -82,7 +83,6 @@ class Server():
             return (1, b"")
 
         msg = msg_size, msg_type, message
-        # print(msg)
 
         return (0, msg)
 
@@ -110,20 +110,16 @@ class Server():
                 # No message received
                 return
             else:
+                print(msg)
                 await self.__pass_to_recv_queue(msg[1][1], msg[1][2])
 
     def start(self):
-        eloop = asyncio.get_event_loop()
         server = asyncio.start_server(self.__handle_connection,
                                       host=self.host,
                                       port=self.port,
                                       family=self.addresses_family,
                                       reuse_address=True,
                                       reuse_port=True)
-        eloop.create_task(server)
-        eloop.create_task(self.__handle_sending())
-        # Evtl das in init, da noch gossip tasks generiert werden müssen
-        try:
-            eloop.run_forever()
-        except KeyboardInterrupt as e:
-            eloop.stop()
+        self.eloop.create_task(server)
+        self.eloop.create_task(self.__handle_sending())
+        
