@@ -1,5 +1,6 @@
 import asyncio
 import re
+import socket
 from argparse import ArgumentParser
 from configobj import ConfigObj
 
@@ -8,14 +9,16 @@ from connection import Server
 
 def split_address_into_tuple(address):
     res = None
+    addr = None
+    port = None
     pattern_v4_ip = r"([\d]{1-3}.[\d]{1-3}.[\d]{1-3}.[\d]{1-3}):([\d]+)"
-    pattern_v4_name = r"([\w.-]+):([\d]+)"
+    pattern_name = r"([\w.-]+):([\d]+)"
     pattern_v6 = r"\[([a-f\d]*:[a-f\d]*:[a-f\d]*:[a-f\d]*:[a-f\d]*:[a-f\d]*:[a-f\d]*:[a-f\d]*)\]:([\d]+)"
 
     res = re.match(pattern_v4_ip, address)
     if res is None:
         # try name
-        res = re.match(pattern_v4_name, address)
+        res = re.match(pattern_name, address)
     if res is None:
         # try IPv6
         res = re.match(pattern_v6, address)
@@ -23,7 +26,13 @@ def split_address_into_tuple(address):
         print("%s has the wrong format" % address)
         exit(1)
 
-    return (res.group(1), res.group(2))
+    entry = socket.getaddrinfo(res.group(1), int(res.group(2)))
+    if len(entry) == 0:
+        print("Cannot get information about %s:%s" % res.group(1), res.group(2))
+        exit(1)
+
+    addr, port = entry[0][4]
+    return (addr, port)
 
 
 def parse_config_file(config_file):
@@ -46,8 +55,9 @@ def parse_config_file(config_file):
         if o in config['gossip']:
             globals()[o] = config['gossip'][o]
         else:
-            print("'%s' is missing in .ini file" % o)
-            exit(1)
+            if o != 'bootstrapper':
+                print("'%s' is missing in .ini file" % o)
+                exit(1)
 
     # Split the addresses into tuples
     bootstr = split_address_into_tuple(bootstrapper)
@@ -66,13 +76,13 @@ def main():
 
     configs = parse_config_file(args.config_file)
 
-    p2p_send_queue = asyncio.PriorityQueue()
+    p2p_send_queue = asyncio.Queue()
     p2p_recv_queue = asyncio.PriorityQueue()
-    api_send_queue = asyncio.PriorityQueue()
+    api_send_queue = asyncio.Queue()
     api_recv_queue = asyncio.PriorityQueue()
 
     # Send queue: gossip->out
-    #   Items: (prio, (address, port, msg_type, msg (without header)))
+    #   Items: (msg_size, msg_type, msg)
     # Recv queue: out->gossip
     #   Items: (prio, (msg_size, msg_type, msg))
 
@@ -87,7 +97,7 @@ def main():
 
     # Start P2P server
     p2p_server = Server(
-        configs['p2p_address'][0], configs['p2p_address'][1], p2p_send_queue, p2p_recv_queue, eloop)
+        configs['p2p_address'][0], configs['p2p_address'][1], p2p_send_queue, p2p_recv_queue, eloop, configs['degree'])
     p2p_server.start()
 
     try:
