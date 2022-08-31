@@ -9,8 +9,30 @@ class MessageType(IntEnum):
     GOSSIP_PEER_REQUEST = 504,
     GOSSIP_PEER_RESPONSE = 505,
     GOSSIP_VERIFICATION_REQUEST = 506,
-    GOSSIP_VERIFICATION_RESPONSE = 507
+    GOSSIP_VERIFICATION_RESPONSE = 507,
 
+    PING = 509
+
+
+class Peer(object):
+    def __init__(self, ip: str, port: int):
+        self.ip = ip
+        self.port = port 
+
+    def __repr__(self):
+        return "Peer %s:%i" % (self.ip, self.port)
+
+    def __hash__(self):
+        return hash(self.__repr__())
+
+    def __eq__(self, peer):
+        if type(peer) == Peer:
+            if peer.ip == self.ip and peer.port == self.port:
+                return True
+        return False
+
+    def string(self):
+        return self.__repr__()
 
 def do_pow(nonce):
     # TODO
