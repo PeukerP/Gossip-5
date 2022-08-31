@@ -1,6 +1,7 @@
 import asyncio
 import re
 import socket
+import logging
 from argparse import ArgumentParser
 from configobj import ConfigObj
 
@@ -60,12 +61,19 @@ def parse_config_file(config_file):
                 exit(1)
 
     # Split the addresses into tuples
-    bootstr = split_address_into_tuple(bootstrapper)
+    
     p2p_addr = split_address_into_tuple(p2p_address)
     api_addr = split_address_into_tuple(api_address)
+    
+    if 'bootstrapper' in config['gossip']:
+        bootstr = split_address_into_tuple(bootstrapper)
 
-    return {'cache_size': int(cache_size), 'degree': int(degree), 'bootstrapper': bootstr,
+        return {'cache_size': int(cache_size), 'degree': int(degree), 'bootstrapper': bootstr,
             'p2p_address': p2p_addr, 'api_address': api_addr}
+    else:
+        return {'cache_size': int(cache_size), 'degree': int(degree), 'bootstrapper': None,
+            'p2p_address': p2p_addr, 'api_address': api_addr}
+
 
 
 def main():
@@ -76,28 +84,31 @@ def main():
 
     configs = parse_config_file(args.config_file)
 
+    logging.basicConfig(format='%(levelname)s - %(name)s - %(message)s', filename='server.log', encoding='utf-8', level=logging.DEBUG)
+
     p2p_send_queue = asyncio.Queue()
     p2p_recv_queue = asyncio.PriorityQueue()
     api_send_queue = asyncio.Queue()
     api_recv_queue = asyncio.PriorityQueue()
 
     # Send queue: gossip->out
-    #   Items: (msg_size, msg_type, msg)
+    #   Items: (receiver, msg_size, msg_type, msg)
     # Recv queue: out->gossip
-    #   Items: (prio, (msg_size, msg_type, msg))
+    #   Items: (prio, (msg_size, msg_type, msg), sender)
+    # For P2P server, sender and receiver are None
 
     # We also need to init and start the Gossip handler here
 
     eloop = asyncio.new_event_loop()
 
     # Start API Server
-    api_server = Server(
-        configs['api_address'][0], configs['api_address'][1], api_send_queue, api_recv_queue, eloop)
-    api_server.start()
+    #api_server = Server('api',
+    #    configs['api_address'][0], configs['api_address'][1], api_send_queue, api_recv_queue, eloop)
+    #api_server.start()
 
     # Start P2P server
-    p2p_server = Server(
-        configs['p2p_address'][0], configs['p2p_address'][1], p2p_send_queue, p2p_recv_queue, eloop, configs['degree'])
+    p2p_server = Server('p2p',
+        configs['p2p_address'][0], configs['p2p_address'][1], p2p_send_queue, p2p_recv_queue, eloop, configs['degree'], configs['bootstrapper'])
     p2p_server.start()
 
     try:
