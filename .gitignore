@@ -1,2 +1,3 @@
 Gossip-5.code-workspace
 src/__pycache__/*
+src/server.log
