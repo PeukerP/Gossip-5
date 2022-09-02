@@ -5,7 +5,7 @@ import logging
 from argparse import ArgumentParser
 from configobj import ConfigObj
 
-from connection import Server
+from server import P2PServer
 
 
 def split_address_into_tuple(address):
@@ -107,8 +107,8 @@ def main():
     #api_server.start()
 
     # Start P2P server
-    p2p_server = Server('p2p',
-        configs['p2p_address'][0], configs['p2p_address'][1], p2p_send_queue, p2p_recv_queue, eloop, configs['degree'], configs['bootstrapper'])
+    p2p_server = P2PServer('p2p',
+        configs['p2p_address'][0], configs['p2p_address'][1], 5,  p2p_send_queue, p2p_recv_queue, eloop, configs['degree'], configs['bootstrapper'])
     p2p_server.start()
 
     try:
