@@ -10,8 +10,9 @@ class MessageType(IntEnum):
     GOSSIP_PEER_RESPONSE = 505,
     GOSSIP_VERIFICATION_REQUEST = 506,
     GOSSIP_VERIFICATION_RESPONSE = 507,
-
-    PING = 509
+    GOSSIP_HELLO = 508, # Ich establishe eine connection und schicke mich mit
+    GOSSIP_PUSH = 509,
+    PING = 510
 
 
 class Peer(object):
