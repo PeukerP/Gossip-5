@@ -167,8 +167,7 @@ class Server():
 
 class P2PServer(Server):
     def __init__(self, server, host, port, max_ttl, send_queue: asyncio.PriorityQueue, recv_queue: asyncio.PriorityQueue, event_loop, degree=-1, bootstrapper=None):
-        super().__init__(server, host, port, max_ttl, send_queue,
-                         recv_queue, event_loop, degree, bootstrapper)
+        super().__init__(server, host, port, send_queue, recv_queue, event_loop, degree, bootstrapper)
         self._max_ttl= max_ttl
         self._bootstrapper = None if (bootstrapper == None) else Peer(
             bootstrapper[0], bootstrapper[1])
