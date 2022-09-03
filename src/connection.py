@@ -71,7 +71,7 @@ class Connections():
         print("Check for life")
         writer = self.__connections[peer][1]
         # Build PING message
-        msg = pack(">HH", 4, MessageType.PING)
+        msg = pack(">HH", 4, MessageType.PEER_PING)
 
         if peer in self.__connections:
             writer = self.__connections[peer][1]
