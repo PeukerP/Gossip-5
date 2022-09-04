@@ -5,7 +5,7 @@ import logging
 from argparse import ArgumentParser
 from configobj import ConfigObj
 
-from server import P2PServer
+from server import P2PServer, APIServer
 
 
 def split_address_into_tuple(address):
@@ -95,20 +95,19 @@ def main():
     #   Items: (receiver, msg_size, msg_type, msg)
     # Recv queue: out->gossip
     #   Items: (prio, (msg_size, msg_type, msg), sender)
-    # For P2P server, sender and receiver are None
 
     # We also need to init and start the Gossip handler here
 
     eloop = asyncio.new_event_loop()
 
     # Start API Server
-    #api_server = Server('api',
-    #    configs['api_address'][0], configs['api_address'][1], api_send_queue, api_recv_queue, eloop)
-    #api_server.start()
+    api_server = APIServer('api',
+        configs['api_address'][0], configs['api_address'][1], api_send_queue, api_recv_queue, eloop)
+    api_server.start()
 
     # Start P2P server
     p2p_server = P2PServer('p2p',
-        configs['p2p_address'][0], configs['p2p_address'][1], 5,  p2p_send_queue, p2p_recv_queue, eloop, configs['degree'], configs['bootstrapper'])
+        configs['p2p_address'][0], configs['p2p_address'][1], 5,  p2p_send_queue, p2p_recv_queue, eloop, configs['cache_size'], configs['degree'], configs['bootstrapper'])
     p2p_server.start()
 
     try:

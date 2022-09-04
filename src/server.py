@@ -3,7 +3,7 @@ import socket
 import logging
 from connection import Connections
 from struct import unpack, pack
-from util import MessageType, Peer, do_pow
+from util import MessageType, Peer, do_pow, generate_nonce, verify_pow
 from packing import *
 class Server():
     '''
@@ -11,15 +11,13 @@ class Server():
     and functions of the actual P2PServer and APIServer
     '''
 
-    def __init__(self, server, host, port, send_queue: asyncio.PriorityQueue, recv_queue: asyncio.PriorityQueue, event_loop, degree=-1):
+    def __init__(self, server, host, port, send_queue: asyncio.PriorityQueue, recv_queue: asyncio.PriorityQueue, event_loop):
         self.server = server
         self.host = Peer(host, port)
-        self.degree = degree
-
         self._logger = logging.getLogger(self.host.string())
 
         # Only check for alive peers when we have > degree peers or we have to answer a PEER_REQUEST
-        self._connections = Connections(self.degree, self._logger)
+        self._connections = Connections(self._logger)
         # Gossip -> out
         self.send_queue = send_queue
         # out -> Gossip
@@ -38,43 +36,45 @@ class Server():
         self.eloop.create_task(self._handle_sending())
 
     async def _handle_sending(self):
-        while True:
-            recv, msg_size, msg_type, msg = (await self.send_queue.get())
-            if recv is None:
-                await self._send_msg_to_all(msg_size, msg_type, msg)
-            else:
-                await self._send_msg(recv, msg_size, msg_type, msg)
-            self.send_queue.task_done()  # Noetig?
+        raise NotImplementedError
 
     '''
     Assembles and sends message to all the known peers with an established connection.
     '''
 
     async def _send_msg_to_all(self, message_size, message_type: MessageType, message):
+        for peer in self._connections.get_all_connections():
+            await self._send_msg(peer, message_size, message_type, message)
 
-        if message_type == MessageType.GOSSIP_PEER_RESPONSE:
-            self._send_peer_response(message)
-        else:
-            for peer in self._connections.get_all_connections():
-                await self._send_msg(peer, message_size, message_type, message)
+    async def _send_msg_to_degree(self, message_size, message_type, message, degree):
+        random_peers = self._connections.get_random_peers(degree)
+        for peer in random_peers:
+            await self._send_msg(peer, message_size, message_type, message)
+
 
     ''' 
     Send message to receiver. Returns whether it was able to send the message.
+    peer can be Peer or tuple(reader, writer)
     '''
     async def _send_msg(self, receiver: Peer, message_size, message_type: MessageType, message):
         #msg = b''
         #msg += pack(">H", message_size)
         #msg += pack(">H", message_type)
         msg = message
+        reader = None
+        writer = None
 
         self._logger.debug("Ready to send")
+        if isinstance(receiver, Peer):
 
-        reader, writer = self._connections.get_streams(receiver)
-        if writer is None:
-            # Probleme mit shadowing
-            reader, writer = await self._create_new_connection(receiver)
-        if writer is None :
-            return False
+            reader, writer = self._connections.get_streams(receiver)
+            if writer is None:
+                # Probleme mit shadowing
+                reader, writer = await self._create_new_connection(receiver)
+            if writer is None :
+                return False
+        else:
+            reader, writer = receiver
         if writer.is_closing():
             # self._remove_peer(receiver)
             return False
@@ -84,11 +84,13 @@ class Server():
             await writer.drain()
         except:
             self._logger.warn("Error sending to %s" % receiver)
-            self._connections.remove_connection(receiver)
+            if isinstance(receiver, Peer):
+                self._connections.remove_connection(receiver)
             return False
 
         self._logger.debug("Sent to %s: %s" % (receiver, msg))
         return True
+
 
     async def _create_new_connection(self, peer):
         if peer == self.host:
@@ -98,6 +100,8 @@ class Server():
             # Start listening on read stream
             asyncio.gather(self._handle_receiving(reader, writer))
         return reader, writer
+
+    
 
 
     async def _handle_receiving(self, reader: asyncio.StreamReader,  writer: asyncio.StreamWriter):
@@ -122,7 +126,7 @@ class Server():
         self._logger.warn("Exit recv loop")
 
         
-    async def _handle_received_message(self, reader, writer, new_peer):
+    async def _handle_received_message(self, message, reader, writer, new_peer):
         raise NotImplementedError
 
 
@@ -161,14 +165,17 @@ class Server():
         return (0, msg)
 
 class P2PServer(Server):
-    def __init__(self, server, host, port, max_ttl, send_queue: asyncio.PriorityQueue, recv_queue: asyncio.PriorityQueue, event_loop, degree=-1, bootstrapper=None):
-        super().__init__(server, host, port, send_queue, recv_queue, event_loop, degree, bootstrapper)
+    def __init__(self, server, host, port, max_ttl, send_queue: asyncio.PriorityQueue, recv_queue: asyncio.PriorityQueue, event_loop, cache_size, degree, bootstrapper=None):
+        super().__init__(server, host, port, send_queue, recv_queue, event_loop)
+        self._degree = degree
         self._max_ttl= max_ttl
-        self._bootstrapper = None if (bootstrapper == None) else Peer(
-            bootstrapper[0], bootstrapper[1])
+        self._bootstrapper = None if (bootstrapper == None) else Peer(bootstrapper[0], bootstrapper[1])
+        self._pending_validation = {} # Stream tuple -> nonce
 
         if self._bootstrapper is not None:
-            self._connections.update_connection(self._bootstrapper, None, None)
+            self._connections.add_peer(self._bootstrapper)
+
+        self._connections.set_limit(cache_size)
 
     def start(self):
         self._logger.debug("Start %s-server" % self.server)
@@ -188,13 +195,37 @@ class P2PServer(Server):
         self.eloop.create_task(server)
         self.eloop.create_task(self._handle_sending())
 
+    async def _handle_sending(self):
+        try:
+            while True:
+                recv, msg_size, msg_type, msg = (await self.send_queue.get())
+                if recv is None:
+                    await self._send_msg_to_all(msg_size, msg_type, msg)
+                elif isinstance(recv, Peer) or isinstance(recv, tuple):
+                    await self._send_msg(recv, msg_size, msg_type, msg)
+                else:
+                    await self._send_msg_to_degree(msg_size, msg_type, msg, self._degree)
+                self.send_queue.task_done()  # Noetig?
+        except:
+            self._logger.exception("Failure in sending message")
+
     async def _handle_received_message(self, msg, reader, writer, new_peer):
         msg_len, msg_type, data = msg
 
         self._logger.debug("Received from %s %s" % (new_peer, msg))
         if msg_type == MessageType.GOSSIP_HELLO:
             print("Hello")
-            await self._receive_gossip_hello(data, reader, writer)
+            if self._bootstrapper is None:
+                # First, request PoW, then may add to peer list
+                # Send nonce
+                await self._send_verification_request(reader, writer)
+            else:
+                await self._receive_gossip_hello(data, reader, writer)
+        elif msg_type == MessageType.GOSSIP_VERIFICATION_REQUEST:
+            # TODO: Muss bootstapper sich auch irgendwo verifizieren?
+            await self._receive_verification_request(data, reader, writer)
+        elif msg_type == MessageType.GOSSIP_VERIFICATION_RESPONSE:
+            await self._receive_verification_response(data, reader, writer)
         elif msg_type == MessageType.GOSSIP_VALIDATION:
             # validation has a higher prio
             await self.recv_queue.put((0, msg, sender))
@@ -233,7 +264,7 @@ class P2PServer(Server):
     async def _receive_peer_response(self, msg, msg_len):
         data = unpack_peer_response(msg, msg_len)
         for peer_dir in data['peer_list']:
-            if self._connections.get_capacity() <= 0:
+            if self._connections.get_capacity() == 0:
                 break
             new_peer = Peer(peer_dir['addr'], peer_dir['port'])
 
@@ -243,12 +274,13 @@ class P2PServer(Server):
 
     async def _send_gossip_hello(self, receiver):
         msg = pack_hello(self.host)
+        print("Send hello")
         await self.send_queue.put((receiver, len(msg), MessageType.GOSSIP_HELLO, msg))
 
     async def _receive_gossip_hello(self, msg, reader, writer):
         data = unpack_hello(msg)
         peer = Peer(data['addr'], data['port'])
-        self._connections.update_connection(peer, reader, writer)
+        await self._connections.update_connection(peer, reader, writer)
         # Send my view to the new one
         await self._send_peer_response(peer, None)
         # PUSH the new one to all other
@@ -271,3 +303,78 @@ class P2PServer(Server):
         #TODO: Lookup ttl handling
         if data['ttl'] > 1:
             await self._send_push_update(new_peer, data['ttl']-1)
+
+    async def _send_verification_request(self, reader, writer):
+        nonce = generate_nonce()
+        msg = pack_verification_request(nonce)
+        await self.send_queue.put(((reader, writer), len(msg), MessageType.GOSSIP_VERIFICATION_REQUEST, msg))
+        self._pending_validation.update({(reader, writer): nonce})
+
+    async def _receive_verification_request(self, msg, reader, writer):
+        data = unpack_verification_request(msg)
+        nonce = data['nonce']
+        msg = pack_verification_response(nonce, self.host)
+        await self.send_queue.put(((reader, writer), len(msg), MessageType.GOSSIP_VERIFICATION_RESPONSE, msg))
+
+    async def _receive_verification_response(self, msg, reader, writer):
+        success = False
+        data = unpack_verification_response(msg)
+        if (reader, writer) in self._pending_validation:
+            old_nonce = self._pending_validation[(reader, writer)]
+            if old_nonce == data['nonce']:
+                if verify_pow(data['nonce'], data['challenge']):
+                    success = True
+                    await  self._connections.update_connection(data['peer'], reader, writer)
+        self._pending_validation.pop((reader, writer))
+        if not success:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except:
+                self._logger.warn("Closing failed")
+        else:
+            await self._send_peer_response(data['peer'], None)
+            await self._send_push_update(data['peer'], 1)
+
+
+
+
+
+class APIServer(Server):
+    def __init__(self, server, host, port, send_queue: asyncio.PriorityQueue, recv_queue: asyncio.PriorityQueue, event_loop):
+        super().__init__(server, host, port, send_queue, recv_queue, event_loop)
+
+
+    def start(self):
+        self._logger.debug("Start %s-server" % self.server)
+        server = asyncio.start_server(self._handle_receiving,
+                                      host=self.host.ip,
+                                      port=self.host.port,
+                                      family=socket.AF_INET,
+                                      reuse_address=True,
+                                      reuse_port=True)
+
+        self.eloop.create_task(server)
+        self.eloop.create_task(self._handle_sending())
+
+
+    async def _handle_received_message(self, message, reader, writer, new_peer):
+        # Add new_peer to connections if there is enough space
+        if self._connections.get_capacity() == 0 and new_peer is not self._connections.get_all_connections():
+            self._connections.remove_unused_connections()
+            if self._connections.get_capacity() == 0:
+                self._logger.warn("Limit for active connections reached")
+                writer.close()
+                await writer.wait_closed()
+                return
+        await self._connections.update_connection(new_peer, reader, writer)
+        await self.recv_queue.put((1, message, sender))
+
+
+    async def _handle_sending(self):
+        try:
+            while True:
+                recv, msg_size, msg_type, msg = (await self.send_queue.get())
+                await self._send_msg(recv, msg_size, msg_type, msg)
+        except:
+            self._logger.exception("Failure in sending message")
