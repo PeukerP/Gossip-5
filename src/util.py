@@ -1,5 +1,6 @@
 from enum import IntEnum
 from hashlib import sha256
+from random import randint
 
 class MessageType(IntEnum):
     GOSSIP_ANNOUNCE = 500,
@@ -36,5 +37,12 @@ class Peer(object):
         return self.__repr__()
 
 def do_pow(nonce):
-    # TODO
+    #TODO
     return 0
+
+def verify_pow(nonce, challenge):
+    #TODO
+    return True
+
+def generate_nonce():
+    return randint(0, 0xffffffffffffffff)

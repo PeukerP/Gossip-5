@@ -1,6 +1,6 @@
 import socket
 from struct import pack, unpack
-from util import MessageType, Peer, do_pow
+from util import MessageType, Peer, do_pow, generate_nonce
 
 def pack_push_update(peer, ttl):
     msg = b''
@@ -78,4 +78,29 @@ def unpack_peer_response(payload, msg_len):
     res = {'nonce': nonce, 'challenge': challenge, 'peer_list': id}
     return res
 
+def pack_verification_request(nonce):
+    msg = pack(">HHQ",12, MessageType.GOSSIP_VERIFICATION_REQUEST, nonce)
+    return msg
+
+def unpack_verification_request(msg):
+    nonce = unpack(">Q", msg)[0]
+    res = {'nonce': nonce}
+    return res
+
+def pack_verification_response(nonce, peer):
+    msg = pack(">HQQ", MessageType.GOSSIP_VERIFICATION_RESPONSE, nonce, do_pow(nonce))
+    # Schicke Absender mit
+    msg += socket.inet_aton(peer.ip)
+    msg += pack(">H", peer.port)
+    msg = pack(">H", 2 + len(msg)) + msg
+
+    return msg
+
+def unpack_verification_response(msg):
+    nonce, challenge = unpack(">QQ", msg[:16])
+    addr = socket.inet_ntoa(msg[16:20])
+    port = unpack(">H", msg[20:22])[0]
+
+    res = {'nonce': nonce, 'challenge': challenge, 'peer': Peer(addr, port)}
+    return res
 
