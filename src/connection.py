@@ -3,11 +3,7 @@ import socket
 import logging
 from random import choice
 from struct import unpack, pack
-
-
-# TODO: Ist big-endian im packet wirklich nötig?
-# TODO: Send valid peer list
-
+from util import MessageType
 
 class Connections():
     def __init__(self, logger, limit=-1):
@@ -69,10 +65,13 @@ class Connections():
                 return
             elif self.get_streams(peer) != (None, None):
                 # Is connection still alive? -> Do not upgrade
-                if self.is_alive(peer):
+                if await self.is_alive(peer):
                     return 
         self.__connections.update({peer: (reader, writer)})
-    
+
+    '''
+    never used?
+
     async def remove_unused_connections(self):
         peers_to_remove = []
 
@@ -82,30 +81,34 @@ class Connections():
 
         for p in peers_to_remove:
             self.__connections.pop(p)
+    '''
 
     async def remove_connection(self, peer):
         if peer not in self.__connections:
             return
         writer = self.__connections[peer][1]
-        if writer is not None and not writer.is_closing():
+        if writer is not None and await self.is_alive(peer) and not writer.is_closing():
             try:
                 writer.close()
                 await writer.wait_closed()
             except:
+                # TODO
                 pass
 
         self.__connections.pop(peer)
 
     async def is_alive(self, peer):
         print("Check for life")
-        writer = self.__connections[peer][1]
+        established = False
+        writer = None 
         # Build PING message
-        msg = pack(">HH", 4, MessageType.PEER_PING)
+        msg = pack(">HH", 4, MessageType.PING)
 
         if peer in self.__connections:
             writer = self.__connections[peer][1]
         else:
             reader, writer = await self.establish_connection(peer)
+            established = True
 
         if writer.is_closing():
             return False
@@ -114,22 +117,31 @@ class Connections():
             writer.write(msg)
             await writer.drain()
         except:
-            self.__logger.warn("Error sending to %s" % receiver)
+            self.__logger.warning("Error sending to %s" % peer)
             return False
+        if established:
+            # Schließe connection wieder
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except:
+                # TODO
+                pass
+
         return True
 
     async def establish_connection(self, peer):
         # Peer has to be in peer list
         if peer not in self.__connections:
             return None, None
-        print("Try")
+
         self.__logger.debug("Establish connection with %s" % peer)
-        print("Try")
+
         try:
             reader, writer = await asyncio.open_connection(peer.ip, peer.port)
         except:
-            self.__logger.warn("Connection with %s cannot be established" % peer)
-            self.remove_connection(peer)
+            self.__logger.exception("Connection with %s cannot be established" % peer)
+            await self.remove_connection(peer)
             return None, None
         await self.update_connection(peer, reader, writer)
         me = writer.get_extra_info('sockname')
