@@ -1,13 +1,19 @@
 import asyncio
-import socket
-import logging
 from random import choice
-from struct import unpack, pack
+from struct import pack
 from util import MessageType
 
+
 class Connections():
+
     def __init__(self, logger, limit=-1):
-        
+
+        '''
+        This class manages the peer list. The max number of peers can be limited 
+        or is unlimited by default.
+        :param logger: Set logger for debugging purposes
+        :param limit: Set limit for the max number of peers in the peer list
+        '''       
         self.__limit = limit
         self.__connections = {} # Peer -> read,write stream
         self.__logger = logger
@@ -16,26 +22,38 @@ class Connections():
         return str(self.__connections.keys())
 
     def set_limit(self, limit):
-        if self.__limit != -1:
+        '''
+        Sets the max number of peers in the list to limit. Can be only applied if the limit
+        has not already been set.
+        '''
+        if self.__limit != -1 or limit < 1:
             return
         self.__limit = limit
-        
-        
+
     def get_all_connections(self):
         return self.__connections
 
     def get_streams(self, peer):
+        '''
+        Get r/w streams registered for a peer. If peer is not in peer list, return (None, None) 
+        '''
         if peer in self.__connections:
             return self.__connections[peer]
         else:
-            return (None,None)
+            return (None, None)
 
     def get_capacity(self):
+        '''
+        Get current capacity of peer list. If no limit has been set, return -1.
+        '''
         if self.__limit == -1:
             return -1
         return self.__limit - len(self.__connections)
 
     def get_random_peers(self, amount):
+        '''
+        Return a set of min(amount, len(peer list)) peers from the peer list.
+        '''
         if amount < 0:
             return set()
         res = set()
@@ -54,6 +72,13 @@ class Connections():
         self.__connections.update({peer: (None, None)})
 
     async def update_connection(self, peer, reader, writer):
+        '''
+        Adds peer to connections if it is is not in the connections.
+        Peers can be updated if their streams are None before. Otherwise they can only be 
+        updated if the previous connection is down. The idea is that there is only one connection
+        from one module.
+        If the peer cannot be updated due to a alive connection, return False. Otherwise True. 
+        '''
         if len(self.__connections) == self.__limit and peer not in self.__connections:
             # if the connection buffer is still full, remove any connection 
             r = self.get_random_peers(1).pop()
@@ -62,12 +87,13 @@ class Connections():
         if peer in self.__connections:
             if reader is None or writer is None:
                 # Ignore downgrade
-                return
+                return True
             elif self.get_streams(peer) != (None, None):
                 # Is connection still alive? -> Do not upgrade
                 if await self.is_alive(peer):
-                    return 
+                    return False
         self.__connections.update({peer: (reader, writer)})
+        return True
 
     '''
     never used?
@@ -84,31 +110,50 @@ class Connections():
     '''
 
     async def remove_connection(self, peer):
+        '''
+        Removes peer from the peer list. If there is still an open connection, close it.
+        '''
         if peer not in self.__connections:
             return
         writer = self.__connections[peer][1]
         if writer is not None and await self.is_alive(peer) and not writer.is_closing():
+            self.__logger.debug("Close connection with %s" % peer)
             try:
                 writer.close()
                 await writer.wait_closed()
             except:
-                # TODO
-                pass
+                self.__logger.exception("Problem with closing %s" % peer)
 
         self.__connections.pop(peer)
 
-    async def is_alive(self, peer):
+    async def is_alive(self, peer=None, stream_tuple=None):
+        '''
+        Checks if the connection is alive. At least one argument must not be None
+        :param peer: Peer to check
+        :param stream_tuple: Streams (r,w) to check. This is checked when the peer is not given.
+        :return: Bool whether connection is alive
+
+        This function checks if a connection is still alive by sending a PING message 
+        to the writer stream.
+        '''
         print("Check for life")
-        established = False
-        writer = None 
+        #established = False
+        writer = None
         # Build PING message
         msg = pack(">HH", 4, MessageType.PING)
 
-        if peer in self.__connections:
+        if peer is None and stream_tuple is None:
+            self.__logger.warning("is_alive request for None type")
+            return False
+
+        if peer is not None and peer in self.__connections:
             writer = self.__connections[peer][1]
-        else:
-            reader, writer = await self.establish_connection(peer)
-            established = True
+        elif stream_tuple is not None:
+            reader, writer = stream_tuple  #await self.establish_connection(peer)
+            #established = True
+            #return False
+        if writer is None: 
+            return False
 
         if writer.is_closing():
             return False
@@ -119,18 +164,22 @@ class Connections():
         except:
             self.__logger.warning("Error sending to %s" % peer)
             return False
-        if established:
-            # Schließe connection wieder
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except:
-                # TODO
-                pass
+        #if established:
+        #   # Schließe connection wieder
+        #    try:
+        #        writer.close()
+        #        await writer.wait_closed()
+        #    except:
+        #        # TODO
+        #        pass
 
         return True
 
     async def establish_connection(self, peer):
+        '''
+        Establishes a connection  with peer. Peer needs to be in the peer list.
+        If a connection could not be established, remove the peer from the list.
+        '''
         # Peer has to be in peer list
         if peer not in self.__connections:
             return None, None
@@ -147,6 +196,3 @@ class Connections():
         me = writer.get_extra_info('sockname')
         print("I am ", me)
         return reader, writer
-
-    
-
