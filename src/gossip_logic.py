@@ -94,9 +94,7 @@ class GossipHandler:
             if validation:
                 peer_notification_message: bytes = self.waiting_for_validation[msg_id][0]
                 await self.p2p_send_queue.put((peer_notification_message, None))
-                del self.waiting_for_validation[msg_id]
-            else:
-                del self.waiting_for_validation[msg_id]
+            del self.waiting_for_validation[msg_id]
         await self.__remove_old_waiting()
 
     async def __remove_old_spread(self):
