@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 from configobj import ConfigObj
 
 from server import P2PServer, APIServer
+from gossip_logic import GossipHandler
 
 
 def split_address_into_tuple(address):
@@ -93,7 +94,7 @@ def main():
     # Send queue: gossip->out
     #   Items: (receiver, msg_size, msg_type, msg)
     # Recv queue: out->gossip
-    #   Items: (prio, (msg_size, msg_type, msg), sender)
+    #   Items: (msg_size, msg_type, msg, sender)
 
     # We also need to init and start the Gossip handler here
 
@@ -108,6 +109,9 @@ def main():
     p2p_server = P2PServer('p2p',
         configs['p2p_address'][0], configs['p2p_address'][1], 5,  p2p_send_queue, p2p_recv_queue, eloop, configs['cache_size'], configs['degree'], configs['bootstrapper'])
     t1,t2= p2p_server.start()
+
+    gossip_handler = GossipHandler(p2p_send_queue, p2p_recv_queue, api_send_queue, api_recv_queue, eloop)
+    gossip_handler.start()
 
     try:
         eloop.run_forever()

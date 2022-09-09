@@ -124,7 +124,7 @@ class Server():
             asyncio.gather(self._handle_receiving(reader, writer))
         return reader, writer
 
-    async def _handle_receiving(self, reader: asyncio.StreamReader,  writer: asyncio.StreamWriter):
+    async def _handle_receiving(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         addr, port = writer.get_extra_info('socket').getpeername()
         # TODO: Send challenge + check response before adding to peers-list
         new_peer = Peer(addr, port)
@@ -182,7 +182,8 @@ class Server():
 
 
 class P2PServer(Server):
-    def __init__(self, server, host, port, max_ttl, send_queue: asyncio.PriorityQueue, recv_queue: asyncio.PriorityQueue, event_loop, cache_size, degree, bootstrapper=None):
+    def __init__(self, server, host, port, max_ttl, send_queue: asyncio.PriorityQueue,
+                 recv_queue: asyncio.PriorityQueue, event_loop, cache_size, degree, bootstrapper=None):
         super().__init__(server, host, port, send_queue, recv_queue, event_loop)
         self._degree = degree
         self._cache_size = cache_size
@@ -257,9 +258,7 @@ class P2PServer(Server):
             await self._receive_verification_request(data, reader, writer)
         elif msg_type == MessageType.GOSSIP_VERIFICATION_RESPONSE:
             await self._receive_verification_response(data, reader, writer)
-        elif msg_type == MessageType.GOSSIP_VALIDATION:
-            await self.recv_queue.put((msg, (reader, writer)))
-        #elif msg_type == MessageType.GOSSIP_PEER_REQUEST:
+        # elif msg_type == MessageType.GOSSIP_PEER_REQUEST:
         #    # answer directly
         #    await self._send_peer_response(sender, data)
         elif msg_type == MessageType.GOSSIP_PEER_RESPONSE:
@@ -297,7 +296,7 @@ class P2PServer(Server):
             new_peer = Peer(peer_dir['addr'], peer_dir['port'])
 
             if self._connections.get_streams(new_peer) == (None, None):
-                #self._connections.update_connection(new_peer, None, None)
+                # self._connections.update_connection(new_peer, None, None)
                 await self._send_gossip_hello(new_peer)
 
     async def _send_gossip_hello(self, receiver):
@@ -372,7 +371,6 @@ class P2PServer(Server):
             await self._send_push_update(data['peer'], 2)
 
 
-
 class APIServer(Server):
     def __init__(self, server, host, port, send_queue: asyncio.Queue, recv_queue: asyncio.Queue, event_loop):
         super().__init__(server, host, port, send_queue, recv_queue, event_loop)
@@ -406,7 +404,7 @@ class APIServer(Server):
         '''
         # Do we know this connection?
         if new_peer not in self._connections.get_all_connections() or \
-           self._connections.get_streams(new_peer) != (reader, writer):
+                self._connections.get_streams(new_peer) != (reader, writer):
             # No -> update it
             if not await self._connections.update_connection(new_peer, reader, writer):
                 # Only pass to recv queue if this really a new connection

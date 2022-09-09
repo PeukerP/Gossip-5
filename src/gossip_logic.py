@@ -7,15 +7,16 @@ from util import MessageType, Module, Peer
 
 class GossipHandler:
 
-    def __init__(self, p2p_send_queue: asyncio.PriorityQueue, p2p_recv_queue: asyncio.PriorityQueue,
-                 api_send_queue: asyncio.PriorityQueue, api_recv_queue: asyncio.PriorityQueue):
+    def __init__(self, p2p_send_queue: asyncio.Queue, p2p_recv_queue: asyncio.Queue, api_send_queue: asyncio.Queue,
+                 api_recv_queue: asyncio.Queue, eloop):
         self.notify: [Module] = []
         self.waiting_for_validation: {} = {}
         self.spread: {} = {}
-        self.p2p_send_queue: asyncio.PriorityQueue = p2p_send_queue
-        self.p2p_recv_queue: asyncio.PriorityQueue = p2p_recv_queue
-        self.api_send_queue: asyncio.PriorityQueue = api_send_queue
-        self.api_recv_queue: asyncio.PriorityQueue = api_recv_queue
+        self.p2p_send_queue: asyncio.Queue = p2p_send_queue
+        self.p2p_recv_queue: asyncio.Queue = p2p_recv_queue
+        self.api_send_queue: asyncio.Queue = api_send_queue
+        self.api_recv_queue: asyncio.Queue = api_recv_queue
+        self.eloop = eloop
 
     async def __handle_external(self, message_type: MessageType, message: bytes):
         if message_type == MessageType.GOSSIP_NOTIFICATION:
@@ -97,6 +98,6 @@ class GossipHandler:
             if time.time() - self.spread[msg_id] > 600:
                 del self.spread[msg_id]
 
-    async def start(self):
-        await asyncio.create_task(self.__listen_recv_p2p())
-        await asyncio.create_task(self.__listen_recv_api())
+    def start(self):
+        self.eloop.create_task(self.__listen_recv_p2p())
+        self.eloop.create_task(self.__listen_recv_api())
