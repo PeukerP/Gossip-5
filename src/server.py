@@ -48,20 +48,19 @@ class Server():
     Assembles and sends message to all the known peers with an established connection.
     '''
 
-    async def _send_msg_to_all(self, message_size, message_type: MessageType, message):
+    async def _send_msg_to_all(self, message):
         for peer in self._connections.get_all_connections():
-            await self._send_msg(peer, message_size, message_type, message)
+            await self._send_msg(peer, message)
 
-    async def _send_msg_to_degree(self, message_size, message_type, message, degree):
+    async def _send_msg_to_degree(self, message, degree):
         '''
         Sends message to up to degree peers from the peer list.
         '''
         random_peers = self._connections.get_random_peers(degree)
         for peer in random_peers:
-            await self._send_msg(peer, message_size, message_type, message)
+            await self._send_msg(peer, message)
 
-    async def _send_msg(self, receiver: Union[Peer, Tuple[asyncio.StreamReader, asyncio.StreamReader]],
-                        message_size, message_type: MessageType, message) -> bool:
+    async def _send_msg(self, receiver: Union[Peer, Tuple[asyncio.StreamReader, asyncio.StreamReader]], message) -> bool:
         '''
         Send message to receiver. Returns whether it was able to send the message.
         receiver can be Peer or tuple(reader, writer).
@@ -79,6 +78,7 @@ class Server():
         If sending fails, remove peer from peer list.
         '''
         msg = message
+        print(msg)
         reader: asyncio.StreamReader
         writer: asyncio.StreamWriter
 
@@ -105,7 +105,7 @@ class Server():
         except:
             self._logger.warn("Error sending to %s" % receiver)
             if isinstance(receiver, Peer):
-                self._connections.remove_connection(receiver)
+                await self._connections.remove_connection(receiver)
             return False
 
         self._logger.debug("Sent to %s: %s" % (receiver, msg))
@@ -122,6 +122,7 @@ class Server():
         if reader is not None:
             # Start listening on read stream
             asyncio.gather(self._handle_receiving(reader, writer))
+        self._logger.debug("Successfully created connection")
         return reader, writer
 
     async def _handle_receiving(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
@@ -176,7 +177,7 @@ class Server():
             if (message == b''):
                 return (1, b"")
 
-        msg = size, m_type, message
+        msg = size, m_type, message, (msg_size + msg_type + message)
 
         return (0, msg)
 
@@ -220,10 +221,10 @@ class P2PServer(Server):
     async def _handle_sending(self):
         try:
             while True:
-                recv, msg_size, msg_type, msg = (await self.send_queue.get())
+                msg, recv = (await self.send_queue.get())
                 print(self._connections)
                 if recv is None:
-                    await self._send_msg_to_degree(msg_size, msg_type, msg, self._degree)
+                    await self._send_msg_to_degree(msg, self._degree)
                     # If there are too few peers in the list, try a peer request
                     if len(self._connections.get_all_connections()) < self._peer_threshold:
                         self._logger.debug("Try to gather a peer list from a random neighbor")
@@ -234,16 +235,16 @@ class P2PServer(Server):
                         await self._send_gossip_hello(list(rp)[0])
 
                 elif isinstance(recv, Peer) or isinstance(recv, tuple):
-                    await self._send_msg(recv, msg_size, msg_type, msg)
+                    await self._send_msg(recv, msg)
                 else:
-                    await self._send_msg_to_all(msg_size, msg_type, msg)
+                    await self._send_msg_to_all(msg)
 
                 self.send_queue.task_done()  # Noetig?
         except:
             self._logger.exception("Failure in sending message")
 
     async def _handle_received_message(self, msg, reader, writer, new_peer):
-        msg_len, msg_type, data = msg
+        msg_len, msg_type, data, raw_msg = msg
 
         self._logger.debug("Received from %s %s" % (new_peer, msg))
         if msg_type == MessageType.GOSSIP_HELLO:
@@ -269,13 +270,13 @@ class P2PServer(Server):
             pass  # Do nothing
         else:
             print(msg_type)
-            await self.recv_queue.put((msg, (reader, writer)))
+            await self.recv_queue.put(((reader, writer), msg))
 
     async def _send_peer_request(self, peer):
         # Build GOSSIP PEER REQUEST
         msg = pack_peer_request()
         # Put message into send_queue
-        await self.send_queue.put((peer, len(msg), MessageType.GOSSIP_PEER_REQUEST, msg))
+        await self.send_queue.put((msg, peer))
 
     async def _send_peer_response(self, sender, message):
         # Since only the server knows its neighbors, we have to assemble this package here
@@ -286,7 +287,7 @@ class P2PServer(Server):
         msg = pack_peer_response(self._connections.get_all_connections(), sender)
         print(msg)
 
-        await self.send_queue.put((sender, len(msg), MessageType.GOSSIP_PEER_RESPONSE, msg))
+        await self.send_queue.put((msg, sender))
 
     async def _receive_peer_response(self, msg, msg_len):
         data = unpack_peer_response(msg, msg_len)
@@ -302,7 +303,7 @@ class P2PServer(Server):
     async def _send_gossip_hello(self, receiver):
         msg = pack_hello(self.host)
         print("Send hello")
-        await self.send_queue.put((receiver, len(msg), MessageType.GOSSIP_HELLO, msg))
+        await self.send_queue.put((msg, receiver))
 
     async def _receive_gossip_hello(self, msg, reader, writer):
         data = unpack_hello(msg)
@@ -316,7 +317,7 @@ class P2PServer(Server):
     async def _send_push_update(self, peer, ttl):
         # TODO: Was ist eine sinnolle ttl?
         msg = pack_push_update(peer, ttl)
-        await self.send_queue.put(("ALL", len(msg), MessageType.GOSSIP_PUSH, msg))
+        await self.send_queue.put((msg, "ALL"))
 
     async def _receive_push_update(self, msg):
         data = unpack_push_update(msg)
@@ -337,14 +338,14 @@ class P2PServer(Server):
         nonce = generate_nonce()
         self._logger.debug("Generate nonce: %i" % nonce)
         msg = pack_verification_request(nonce)
-        await self.send_queue.put(((reader, writer), len(msg), MessageType.GOSSIP_VERIFICATION_REQUEST, msg))
+        await self.send_queue.put((msg, (reader, writer)))
         self._pending_validation.update({(reader, writer): nonce})
 
     async def _receive_verification_request(self, msg, reader, writer):
         data = unpack_verification_request(msg)
         nonce = data['nonce']
         msg = pack_verification_response(nonce, self.host)
-        await self.send_queue.put(((reader, writer), len(msg), MessageType.GOSSIP_VERIFICATION_RESPONSE, msg))
+        await self.send_queue.put((msg, (reader, writer)))
 
     async def _receive_verification_response(self, msg, reader, writer):
         success = False
@@ -410,13 +411,13 @@ class APIServer(Server):
                 # Only pass to recv queue if this really a new connection
                 return
 
-        await self.recv_queue.put((message, new_peer))
+        await self.recv_queue.put((new_peer, message))
 
     async def _handle_sending(self):
         try:
             while True:
-                recv, msg_size, msg_type, msg = (await self.send_queue.get())
-                if not await self._send_msg(recv, msg_size, msg_type, msg):
+                msg, recv = (await self.send_queue.get())
+                if not await self._send_msg(recv, msg):
                     return
         except:
             self._logger.exception("Failure in sending message")
