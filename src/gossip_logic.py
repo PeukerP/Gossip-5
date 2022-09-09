@@ -63,7 +63,7 @@ class GossipHandler:
         await self.__send_notification(ttl, msg_id, data_type, data)
 
     async def __notify(self, sender: Peer, message: bytes):
-        data_type = message[7:9]  # TODO: Check for correctness: Bytes 7&8
+        data_type = message[6:8]
         self.notify.append(Module(sender, data_type))
 
     async def __send_notification(self, ttl: int, msg_id: bytes, data_type: bytes, data: bytes):
@@ -89,7 +89,7 @@ class GossipHandler:
 
     async def __validate(self, message: bytes):
         msg_id: bytes = message[4:6]
-        validation: bool = (message[7:] << 7 >> 7) == (1).to_bytes(1, 'big')
+        validation: bool = int.from_bytes(message[7:], 'big') == 1
         if msg_id in self.waiting_for_validation:
             if validation:
                 peer_notification_message: bytes = self.waiting_for_validation[msg_id][0]

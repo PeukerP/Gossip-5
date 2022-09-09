@@ -96,7 +96,7 @@ class Server():
         else:
             self._logger.error("Got %s, expected Peer or tuple" % type(receiver))
         if writer.is_closing():
-            self._connections.remove_connection(receiver)
+            await self._connections.remove_connection(receiver)
             return False
 
         try:
