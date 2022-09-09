@@ -38,18 +38,19 @@ class GossipHandler:
 
     async def __listen_recv_p2p(self):
         while True:
-            message = await self.p2p_recv_queue.get()
-            await self.__handle_external(message[2:4], message)
+            (size, msg_type, body, message), sender = await self.p2p_recv_queue.get()
+            await self.__handle_external(msg_type, message)
 
     async def __listen_recv_api(self):
         while True:
-            message = await self.api_recv_queue.get()
-            await self.__handle_external(message[2:4], message)
+            (size, msg_type, body, message), sender = await self.api_recv_queue.get()
+            await self.__handle_internal(msg_type, sender, message)
 
     async def __spread_notification(self, msg_id: bytes, message: bytes):
         if msg_id not in self.spread:
             self.spread.update({msg_id: time.time()})
-            await self.p2p_send_queue.put((None, message[0:2], MessageType.GOSSIP_NOTIFICATION, message))
+            await self.p2p_send_queue.put(
+                (None, message[0:2], MessageType.GOSSIP_NOTIFICATION.to_bytes(2, 'big'), message))
         self.__remove_old_spread()
 
     def __forward_announce(self, message: bytes):
@@ -70,7 +71,8 @@ class GossipHandler:
         message = (len(message) + 2).to_bytes(2, 'big') + message
         for module in self.notify:
             if module.type_of_data == data_type:
-                await self.api_send_queue.put((module.peer, message[0:2], MessageType.GOSSIP_NOTIFICATION, message))
+                await self.api_send_queue.put(
+                    (module.peer, message[0:2], MessageType.GOSSIP_NOTIFICATION.to_bytes(2, 'big'), message))
             if not validate:
                 validate = True
         if validate:  # When it has been sent, wait for validation to send to others
