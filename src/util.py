@@ -38,6 +38,15 @@ class Peer(object):
         return self.__repr__()
 
 
+class Module(object):
+    def __init__(self, peer: Peer, type_of_data: b""):
+        self.peer = peer
+        self.type_of_data = type_of_data
+
+
+def do_pow(nonce):
+    # TODO
+
 def do_pow(nonce: int) -> int:
     n = nonce.to_bytes(8, 'little')
     for i in range(0xffffffffffffffff):
