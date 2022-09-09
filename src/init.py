@@ -92,9 +92,9 @@ def main():
 
     # TODO: Dieses format vereinheitlichen   
     # Send queue: gossip->out
-    #   Items: (receiver, msg_size, msg_type, msg)
+    #   Items: (raw_msg, recv)
     # Recv queue: out->gossip
-    #   Items: (msg_size, msg_type, msg, sender)
+    #   Items: (msg, sender) msg=(size, type, body, raw_msg)
 
     # We also need to init and start the Gossip handler here
 

@@ -270,7 +270,7 @@ class P2PServer(Server):
             pass  # Do nothing
         else:
             print(msg_type)
-            await self.recv_queue.put(((reader, writer), msg))
+            await self.recv_queue.put((msg, (reader, writer)))
 
     async def _send_peer_request(self, peer):
         # Build GOSSIP PEER REQUEST
@@ -411,7 +411,7 @@ class APIServer(Server):
                 # Only pass to recv queue if this really a new connection
                 return
 
-        await self.recv_queue.put((new_peer, message))
+        await self.recv_queue.put((message, new_peer))
 
     async def _handle_sending(self):
         try:
