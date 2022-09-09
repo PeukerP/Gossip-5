@@ -14,7 +14,8 @@ class MessageType(IntEnum):
     GOSSIP_VERIFICATION_RESPONSE = 507,
     GOSSIP_HELLO = 508,  # Ich establishe eine connection und schicke mich mit
     GOSSIP_PUSH = 509,
-    PING = 510
+    PING = 510,
+    GOSSIP_PEER_NOTIFICATION = 511
 
 
 class Peer(object):
