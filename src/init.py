@@ -74,8 +74,6 @@ def parse_config_file(config_file):
         return {'cache_size': int(cache_size), 'degree': int(degree), 'bootstrapper': None,
             'p2p_address': p2p_addr, 'api_address': api_addr}
 
-
-
 def main():
     parser = ArgumentParser()
     parser.add_argument('-c', dest='config_file',
@@ -87,10 +85,11 @@ def main():
     logging.basicConfig(format='%(levelname)s - %(name)s - %(message)s', filename='server.log', encoding='utf-8', level=logging.DEBUG)
 
     p2p_send_queue = asyncio.Queue()
-    p2p_recv_queue = asyncio.PriorityQueue()
+    p2p_recv_queue = asyncio.Queue()
     api_send_queue = asyncio.Queue()
-    api_recv_queue = asyncio.PriorityQueue()
+    api_recv_queue = asyncio.Queue()
 
+    # TODO: Dieses format vereinheitlichen   
     # Send queue: gossip->out
     #   Items: (receiver, msg_size, msg_type, msg)
     # Recv queue: out->gossip
@@ -108,12 +107,18 @@ def main():
     # Start P2P server
     p2p_server = P2PServer('p2p',
         configs['p2p_address'][0], configs['p2p_address'][1], 5,  p2p_send_queue, p2p_recv_queue, eloop, configs['cache_size'], configs['degree'], configs['bootstrapper'])
-    p2p_server.start()
+    t1,t2= p2p_server.start()
 
     try:
         eloop.run_forever()
     except KeyboardInterrupt as e:
-        eloop.stop()
+        #pending = asyncio.all_tasks()
+        #group = asyncio.gather(*pending, return_exceptions=True)
+
+        #eloop.run_until_complete(group)
+        pass
+    finally:
+        eloop.close()
 
 
 

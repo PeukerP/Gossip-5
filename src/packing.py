@@ -1,6 +1,7 @@
 import socket
 from struct import pack, unpack
-from util import MessageType, Peer, do_pow, generate_nonce
+from util import MessageType, Peer, do_pow
+
 
 def pack_push_update(peer, ttl):
     msg = b''
@@ -12,13 +13,15 @@ def pack_push_update(peer, ttl):
 
     return msg
 
+
 def unpack_push_update(payload):
     ttl = unpack(">H", payload[:2])[0]
     ip = socket.inet_ntoa(payload[2:6])
     port = unpack(">H", payload[6:])[0]
 
     res = {'ttl': ttl, 'addr': ip, 'port': port}
-    return res    
+    return res
+
 
 def pack_hello(peer):
     msg = b''
@@ -31,20 +34,23 @@ def pack_hello(peer):
 
     return msg
 
+
 def unpack_hello(payload):
     ip = socket.inet_ntoa(payload[0:4])
     port = unpack(">H", payload[4:])[0]
 
     res = {'addr': ip, 'port': port}
-    return res    
+    return res
+
 
 def pack_peer_request():
     msg = b''
-    msg += pack(">HL", MessageType.GOSSIP_PEER_REQUEST, self.degree)
+    msg += pack(">HL", MessageType.GOSSIP_PEER_REQUEST, 5)  # TODO
     # TODO: sinnvoller Wert für die nonce
     msg += pack(">Q", 0)
-    msg = pack(">H", 2 + len(msg)) + msg   
+    msg = pack(">H", 2 + len(msg)) + msg
     return msg
+
 
 def unpack_peer_request(payload):
     degree = unpack(">L", payload[:4])[0]
@@ -52,6 +58,7 @@ def unpack_peer_request(payload):
 
     ret = {'degree': degree, 'nonce': nonce}
     return ret
+
 
 def pack_peer_response(neighbors, sender):
     msg = b''
@@ -69,23 +76,26 @@ def pack_peer_response(neighbors, sender):
 
 def unpack_peer_response(payload, msg_len):
     id = []
-    nonce, challenge, _ = unpack(">QQL", payload[:2*8+4])
-    for i in range(2*8+4, msg_len-4, 6):
-        addr = socket.inet_ntoa(payload[i:i+4])
-        port = unpack(">H", payload[i+4:i+6])[0]
-        id.append({'addr':addr, 'port':port})
+    nonce, challenge, _ = unpack(">QQL", payload[:2 * 8 + 4])
+    for i in range(2 * 8 + 4, msg_len - 4, 6):
+        addr = socket.inet_ntoa(payload[i:i + 4])
+        port = unpack(">H", payload[i + 4:i + 6])[0]
+        id.append({'addr': addr, 'port': port})
 
     res = {'nonce': nonce, 'challenge': challenge, 'peer_list': id}
     return res
 
+
 def pack_verification_request(nonce):
-    msg = pack(">HHQ",12, MessageType.GOSSIP_VERIFICATION_REQUEST, nonce)
+    msg = pack(">HHQ", 12, MessageType.GOSSIP_VERIFICATION_REQUEST, nonce)
     return msg
+
 
 def unpack_verification_request(msg):
     nonce = unpack(">Q", msg)[0]
     res = {'nonce': nonce}
     return res
+
 
 def pack_verification_response(nonce, peer):
     msg = pack(">HQQ", MessageType.GOSSIP_VERIFICATION_RESPONSE, nonce, do_pow(nonce))
@@ -96,6 +106,7 @@ def pack_verification_response(nonce, peer):
 
     return msg
 
+
 def unpack_verification_response(msg):
     nonce, challenge = unpack(">QQ", msg[:16])
     addr = socket.inet_ntoa(msg[16:20])
@@ -103,4 +114,3 @@ def unpack_verification_response(msg):
 
     res = {'nonce': nonce, 'challenge': challenge, 'peer': Peer(addr, port)}
     return res
-
