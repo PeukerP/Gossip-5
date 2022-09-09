@@ -49,12 +49,6 @@ class GossipHandler:
             (size, msg_type, body, message), sender = await self.api_recv_queue.get()
             await self.__handle_internal(msg_type, sender, message)
 
-    async def __spread_peer_notification(self, msg_id: bytes, message: bytes):
-        if msg_id not in self.spread:
-            self.spread.update({msg_id: time.time()})
-            await self.p2p_send_queue.put((None, message))
-        await self.__remove_old_spread()
-
     async def __forward_announce(self, message: bytes):
         ttl = int.from_bytes(message[4:5], 'big')
         data_type = message[6:8]
@@ -94,8 +88,9 @@ class GossipHandler:
             if validation:
                 peer_notification_message: bytes = self.waiting_for_validation[msg_id][0]
                 await self.p2p_send_queue.put((peer_notification_message, None))
+                self.spread.update({msg_id: time.time()})
+                self.__remove_old_spread(self)
             del self.waiting_for_validation[msg_id]
-        await self.__remove_old_waiting()
 
     async def __remove_old_spread(self):
         for msg_id in self.spread:
