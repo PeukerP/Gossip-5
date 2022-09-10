@@ -191,6 +191,7 @@ class P2PServer(Server):
         self._max_ttl = max_ttl
         self._bootstrapper = None if (bootstrapper == None) else Peer(bootstrapper[0], bootstrapper[1])
         self._pending_validation = {}  # Stream tuple -> nonce
+        self._peer_threshold = 2  # TODO
 
         if self._bootstrapper is not None:
             self._connections.add_peer(self._bootstrapper)
@@ -226,7 +227,7 @@ class P2PServer(Server):
                 if recv is None:
                     await self._send_msg_to_degree(msg, self._degree)
                     # If there are too few peers in the list, try a peer request
-                    if len(self._connections.get_all_connections()) < self._peer_threshold:
+                    if 0 < len(self._connections.get_all_connections()) < self._peer_threshold:
                         self._logger.debug("Try to gather a peer list from a random neighbor")
                         rp = self._connections.get_random_peers(1)
                         if len(rp) == 0:
@@ -417,7 +418,6 @@ class APIServer(Server):
         try:
             while True:
                 msg, recv = (await self.send_queue.get())
-                if not await self._send_msg(recv, msg):
-                    return
+                await self._send_msg(recv, msg)
         except:
             self._logger.exception("Failure in sending message")
