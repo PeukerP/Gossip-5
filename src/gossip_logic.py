@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import random
 import time
 
@@ -23,9 +24,13 @@ class GossipHandler:
         :param validation_wait_time: time in seconds for how long a message shall be kept back until it was validated by
         a module
         """
-        self.notify: [Module] = []
-        self.waiting_for_validation: {} = {}
-        self.spread: {} = {}
+        self.notify: [Module] = []  # List with Modules which shall be notified. Type = [Module]
+        self.waiting_for_validation: {bytes: (bytes, float)} = {}
+        # Dictionary of messages with timestamp that are waiting for validation to be spread.
+        # Type = {msgID: (message, timestamp)}
+        self.spread: {bytes: float} = {}
+        # Dictionary of messages with timestamp that already have been spread. Type = {msgID: timestamp}
+        self.logger = logging.getLogger(type(self).__name__)
         self.p2p_send_queue: asyncio.Queue = p2p_send_queue
         self.p2p_recv_queue: asyncio.Queue = p2p_recv_queue
         self.api_send_queue: asyncio.Queue = api_send_queue
@@ -34,22 +39,22 @@ class GossipHandler:
         self.suppress_circular_messages_time = suppress_circular_messages_time
         self.validation_wait_time = validation_wait_time
 
-    async def __handle_external(self, message_type: MessageType, message: bytes):
+    async def __handle_external(self, message_type: MessageType, sender: Peer, message: bytes):
         """
         Handler to process messages from p2p_recv_queue.
 
         :param message_type: A MessageType object like defined in util.py for Type validation.
         :param message: The received p2p message as bytes.
         """
-        if message_type == MessageType.GOSSIP_PEER_NOTIFICATION:
+        if message_type == MessageType.GOSSIP_PEER_NOTIFICATION:  # Handle GOSSIP_PEER_NOTIFICATION
             ttl = int.from_bytes(message[4:5], 'big')
             msg_id: bytes = message[6:8]
             data_type: bytes = message[8:10]
             data: bytes = message[10:]
             if msg_id not in self.spread:
                 await self.__send_notification(ttl, msg_id, data_type, data)
-        else:
-            print("Error: Unknown Message Type.") # TODO make it log not print
+        else:  # MessageType unknown or illegal
+            self.logger.warning("Unknown or illegal MessageType received from other peer(%s): %s", sender, message_type)
 
     async def __handle_internal(self, message_type: MessageType, sender: Peer, message: bytes):
         """
@@ -66,7 +71,7 @@ class GossipHandler:
         elif message_type == MessageType.GOSSIP_VALIDATION:
             await self.__validate(message)
         else:
-            print("Error: Unknown Message Type.")  # TODO make it Log not print
+            self.logger.warning("Unknown or illegal MessageType received from module(%s): %s", sender, message_type)
 
     async def __listen_recv_p2p(self):
         """
@@ -74,7 +79,7 @@ class GossipHandler:
         """
         while True:
             (size, msg_type, body, message), sender = await self.p2p_recv_queue.get()
-            await self.__handle_external(msg_type, message)
+            await self.__handle_external(msg_type, sender, message)
 
     async def __listen_recv_api(self):
         """
