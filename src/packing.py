@@ -4,6 +4,9 @@ from util import MessageType, Peer, do_pow
 
 
 def pack_push_update(peer, ttl):
+    '''
+    Build PUSH_UPDATE
+    '''
     msg = b''
     msg += pack(">HH", MessageType.GOSSIP_PUSH, ttl)
     # Schicke neuen Peer mit mit
@@ -15,6 +18,9 @@ def pack_push_update(peer, ttl):
 
 
 def unpack_push_update(payload):
+    '''
+    Unpack PUSH_UPDATE to dir:{ttl, addr, port}
+    '''
     ttl = unpack(">H", payload[:2])[0]
     ip = socket.inet_ntoa(payload[2:6])
     port = unpack(">H", payload[6:])[0]
@@ -24,6 +30,9 @@ def unpack_push_update(payload):
 
 
 def pack_hello(peer):
+    '''
+    Build HELLO with peer
+    '''
     msg = b''
     msg += pack(">H", MessageType.GOSSIP_HELLO)
     # Schicke Absender mit
@@ -36,6 +45,9 @@ def pack_hello(peer):
 
 
 def unpack_hello(payload):
+    '''
+    Unpack HELLO to dir:{addr, port} 
+    '''
     ip = socket.inet_ntoa(payload[0:4])
     port = unpack(">H", payload[4:])[0]
 
@@ -61,9 +73,13 @@ def unpack_peer_request(payload):
 
 
 def pack_peer_response(neighbors, sender):
+    '''
+    Build PEER_RESPONSE
+    :param neighbors: List of peers that should be send 
+    :param sender: This peer will be excluded from the sent peer list
+    '''
     msg = b''
-    msg += pack(">HQQ", MessageType.GOSSIP_PEER_RESPONSE, 0, do_pow(0))
-    msg += pack(">L", 0)
+    msg += pack(">H", MessageType.GOSSIP_PEER_RESPONSE)
 
     for p in neighbors:
         if p == sender:
@@ -75,23 +91,31 @@ def pack_peer_response(neighbors, sender):
 
 
 def unpack_peer_response(payload, msg_len):
+    '''
+    Unpack PEER_RESPONSE into dir:{peer_list} 
+    '''
     id = []
-    nonce, challenge, _ = unpack(">QQL", payload[:2 * 8 + 4])
-    for i in range(2 * 8 + 4, msg_len - 4, 6):
+    for i in range(0, msg_len - 4, 6):
         addr = socket.inet_ntoa(payload[i:i + 4])
         port = unpack(">H", payload[i + 4:i + 6])[0]
         id.append({'addr': addr, 'port': port})
 
-    res = {'nonce': nonce, 'challenge': challenge, 'peer_list': id}
+    res = {'peer_list': id}
     return res
 
 
 def pack_verification_request(nonce):
+    '''
+    Build VERIFICATION_REQUEST 
+    '''
     msg = pack(">HHQ", 12, MessageType.GOSSIP_VERIFICATION_REQUEST, nonce)
     return msg
 
 
 def unpack_verification_request(msg):
+    '''
+    Unpack VERIFICATION_REQUEST in dir:{nonce}
+    '''
     nonce = unpack(">Q", msg)[0]
     res = {'nonce': nonce}
     return res

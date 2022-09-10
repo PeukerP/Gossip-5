@@ -30,7 +30,8 @@ def split_address_into_tuple(address):
 
     entry = socket.getaddrinfo(res.group(1), int(res.group(2)))
     if len(entry) == 0:
-        print("Cannot get information about %s:%s" % res.group(1), res.group(2))
+        print("Cannot get information about %s:%s" %
+              res.group(1), res.group(2))
         exit(1)
 
     addr, port = entry[0][4]
@@ -62,18 +63,19 @@ def parse_config_file(config_file):
                 exit(1)
 
     # Split the addresses into tuples
-    
+
     p2p_addr = split_address_into_tuple(p2p_address)
     api_addr = split_address_into_tuple(api_address)
-    
+
     if 'bootstrapper' in config['gossip']:
         bootstr = split_address_into_tuple(bootstrapper)
 
         return {'cache_size': int(cache_size), 'degree': int(degree), 'bootstrapper': bootstr,
-            'p2p_address': p2p_addr, 'api_address': api_addr}
+                'p2p_address': p2p_addr, 'api_address': api_addr}
     else:
         return {'cache_size': int(cache_size), 'degree': int(degree), 'bootstrapper': None,
-            'p2p_address': p2p_addr, 'api_address': api_addr}
+                'p2p_address': p2p_addr, 'api_address': api_addr}
+
 
 def main():
     parser = ArgumentParser()
@@ -83,14 +85,15 @@ def main():
 
     configs = parse_config_file(args.config_file)
 
-    logging.basicConfig(format='%(levelname)s - %(name)s - %(message)s', filename='server.log', encoding='utf-8', level=logging.DEBUG)
+    logging.basicConfig(format='%(levelname)s - %(name)s - %(message)s', filename='server.log',
+                        encoding='utf-8', level=logging.DEBUG)
 
     p2p_send_queue = asyncio.Queue()
     p2p_recv_queue = asyncio.Queue()
     api_send_queue = asyncio.Queue()
     api_recv_queue = asyncio.Queue()
 
-    # TODO: Dieses format vereinheitlichen   
+    # TODO: Dieses format vereinheitlichen
     # Send queue: gossip->out
     #   Items: (raw_msg, recv)
     # Recv queue: out->gossip
@@ -102,29 +105,25 @@ def main():
 
     # Start API Server
     api_server = APIServer('api',
-        configs['api_address'][0], configs['api_address'][1], api_send_queue, api_recv_queue, eloop)
+                           configs['api_address'][0], configs['api_address'][1],
+                           api_send_queue, api_recv_queue, eloop)
     api_server.start()
 
     # Start P2P server
     p2p_server = P2PServer('p2p',
-        configs['p2p_address'][0], configs['p2p_address'][1], 5,  p2p_send_queue, p2p_recv_queue, eloop, configs['cache_size'], configs['degree'], configs['bootstrapper'])
-    t1,t2= p2p_server.start()
+                           configs['p2p_address'][0], configs['p2p_address'][1], 5,
+                           p2p_send_queue, p2p_recv_queue, eloop,
+                           configs['cache_size'], configs['degree'], configs['bootstrapper'])
+    p2p_server.start()
 
-    gossip_handler = GossipHandler(p2p_send_queue, p2p_recv_queue, api_send_queue, api_recv_queue, eloop)
+    gossip_handler = GossipHandler(
+        p2p_send_queue, p2p_recv_queue, api_send_queue, api_recv_queue, eloop)
     gossip_handler.start()
 
     try:
         eloop.run_forever()
-    except KeyboardInterrupt as e:
-        #pending = asyncio.all_tasks()
-        #group = asyncio.gather(*pending, return_exceptions=True)
-
-        #eloop.run_until_complete(group)
-        pass
-    finally:
+    except KeyboardInterrupt:
         eloop.close()
-
-
 
 
 if __name__ == "__main__":

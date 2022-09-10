@@ -50,14 +50,12 @@ def do_pow(nonce: int) -> int:
     for i in range(0xffffffffffffffff):
         res = sha256(n + i.to_bytes(8, 'little')).digest()
         if res[0:2] == b'00':
-            print(i)
             return i
     return 0
 
 
 def verify_pow(nonce: int, challenge: int) -> bool:
     sha = sha256(nonce.to_bytes(8, 'little') + challenge.to_bytes(8, 'little')).digest()
-    print("Verify: ", sha)
     if sha[0:2] != b'00':
         return False
     return True
