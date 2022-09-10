@@ -76,6 +76,8 @@ def parse_config_file(config_file):
             'p2p_address': p2p_addr, 'api_address': api_addr}
 
 def main():
+    gossip_suppress_circular_messages_time: int = 600  # TODO: Parameter akzeptieren
+    gossip_validation_wait_time: int = 60  # TODO: Parameter akzeptieren
     parser = ArgumentParser()
     parser.add_argument('-c', dest='config_file',
                         help='Give the path to the configuration file.', type=str, required=True)
@@ -110,7 +112,8 @@ def main():
         configs['p2p_address'][0], configs['p2p_address'][1], 5,  p2p_send_queue, p2p_recv_queue, eloop, configs['cache_size'], configs['degree'], configs['bootstrapper'])
     t1,t2= p2p_server.start()
 
-    gossip_handler = GossipHandler(p2p_send_queue, p2p_recv_queue, api_send_queue, api_recv_queue, eloop)
+    gossip_handler = GossipHandler(p2p_send_queue, p2p_recv_queue, api_send_queue, api_recv_queue, eloop,
+                                   gossip_suppress_circular_messages_time, gossip_validation_wait_time)
     gossip_handler.start()
 
     try:
