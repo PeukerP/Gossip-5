@@ -65,6 +65,7 @@ class Connections():
             if p not in res:
                 iter += 1
                 res.add(p)
+        print(res, len(self.__connections))
         return res
 
     def add_peer(self, peer):
