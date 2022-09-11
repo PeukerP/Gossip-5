@@ -3,8 +3,8 @@ import random
 import time
 from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import MagicMock, patch
-from src.gossip_logic import GossipHandler
-from src.util import Module, MessageType, Peer
+from gossip_logic import GossipHandler
+from util import Module, MessageType, Peer
 from parameterized import parameterized
 
 

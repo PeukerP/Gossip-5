@@ -3,7 +3,7 @@ import logging
 import random
 import time
 
-from src.util import MessageType, Module, Peer
+from util import MessageType, Module, Peer
 
 
 class GossipHandler:
