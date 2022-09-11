@@ -80,7 +80,7 @@ class Server():
         for peer in random_peers:
             async with self.lock_c:
                 streams = self._connections.get_streams(peer)
-            if streams not in exclude_list or peer in exclude_list:
+            if streams not in exclude_list and peer not in exclude_list:
                 await self._send_msg(peer, message)
 
     async def _send_msg(self,
@@ -293,6 +293,11 @@ class P2PServer(Server):
             if self.lock_c.locked():
                 self.lock_c.release()
 
+    async def _send_msg(self, receiver, message):
+        if not await super()._send_msg(receiver, message):
+            if receiver in self._establishing:
+                self._establishing.remove(receiver)
+
     async def _handle_receiving(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """
         If connection is closed, remove reader,writer from pending_nonces
@@ -321,8 +326,13 @@ class P2PServer(Server):
                 await self.recv_queue.put((msg, (reader, writer)))
 
     async def _send_peer_response(self, sender):
-        msg = pack_peer_response(
-            self._connections.get_all_connections(), sender)
+        con = []
+        async with self.lock_c:
+            for peer in self._connections.get_all_connections():
+                if self._connections.get_streams(peer) not in self._pending_validation:
+                    con.append(peer)
+
+        msg = pack_peer_response(con, sender)
         await self.send_queue.put((msg, sender))
 
     async def _receive_peer_response(self, msg, msg_len, sender):
@@ -335,7 +345,7 @@ class P2PServer(Server):
         :param msg_len: Length of the PEER_RESPONSE package
         """
         no_updates = 0  # Counts the number of updates
-        self._establishing.remove(sender)
+        #self._establishing.remove(sender)
         data = unpack_peer_response(msg, msg_len)
         capacity = self._connections.get_capacity()
         for peer_dir in data['peer_list']:
@@ -355,7 +365,7 @@ class P2PServer(Server):
 
     async def _send_gossip_hello(self, receiver):
         msg = pack_hello(self.host)
-        self._establishing.add(receiver)
+        #self._establishing.add(receiver)
         await self.send_queue.put((msg, receiver))
 
     async def _send_push_update(self, peer, ttl, exclude_list):
