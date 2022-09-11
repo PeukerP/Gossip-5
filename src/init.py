@@ -11,9 +11,6 @@ from gossip_logic import GossipHandler
 
 
 def split_address_into_tuple(address):
-    res = None
-    addr = None
-    port = None
     pattern_v4_ip = r"([\d]{1-3}.[\d]{1-3}.[\d]{1-3}.[\d]{1-3}):([\d]+)"
     pattern_name = r"([\w.-]+):([\d]+)"
 
@@ -32,7 +29,7 @@ def split_address_into_tuple(address):
         exit(1)
 
     addr, port = entry[0][4]
-    return (addr, port)
+    return addr, port
 
 
 def parse_config_file(config_file):
@@ -77,14 +74,16 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('-c', dest='config_file',
                         help='Give the path to the configuration file.', type=str, required=True)
-    parser.add_argument('-v', dest='validation_time', help="Time in seconds to wait for a message to be validated.", type=int, default=60)
-    parser.add_argument('-s', dest='spread_time', help="Time in seconds to storage a messageID to suppress circulating massages.", type=int,
+    parser.add_argument('-v', dest='validation_time', help="Time in seconds to wait for a message to be validated.",
+                        type=int, default=60)
+    parser.add_argument('-s', dest='spread_time',
+                        help="Time in seconds to storage a messageID to suppress circulating massages.", type=int,
                         default=600)
     args = parser.parse_args()
 
     logger_name = os.path.splitext(os.path.basename(args.config_file))[0]
-    logging.basicConfig(format='%(levelname)s - ' + logger_name + ' - %(name)s - %(message)s', filename='server.log', encoding='utf-8',
-                        level=logging.DEBUG)
+    logging.basicConfig(format='%(levelname)s - ' + logger_name + ' - %(name)s - %(message)s', filename='server.log',
+                        encoding='utf-8', level=logging.DEBUG)
     logger = logging.getLogger("init_main")
 
     configs = parse_config_file(args.config_file)
