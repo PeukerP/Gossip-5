@@ -78,19 +78,33 @@ class GossipHandler:
         """
         Listen loop for p2p_recv_queue.
         """
-        while True:  # Keep reading the incoming p2p messages
-            (size, msg_type, body, message), sender = await self.p2p_recv_queue.get()  # Get oldest unhandled message
-            self.logger.debug("Gossip got P2P message from %s", sender)
-            await self._handle_external(msg_type, sender, message)  # Handle p2p message
+        try:
+            while True:  # Keep reading the incoming p2p messages
+                (size, msg_type, body, message), sender = await self.p2p_recv_queue.get()
+                # Get oldest unhandled message
+                self.logger.debug("Gossip got P2P message from %s", sender)
+                await self._handle_external(msg_type, sender, message)  # Handle p2p message
+        except RuntimeError as e:
+            if e.args[0] == "Event loop is closed":
+                self.logger.debug("P2P queue was closed.")
+            else:
+                raise e
 
     async def __listen_recv_api(self):
         """
         Listen loop for api_recv_queue.
         """
-        while True:  # Keep reading for incoming api messages
-            (size, msg_type, body, message), sender = await self.api_recv_queue.get()  # Get oldest unhandled message
-            self.logger.debug("Gossip got api message from %s", sender)
-            await self._handle_internal(msg_type, sender, message)  # Handle api message
+        try:
+            while True:  # Keep reading for incoming api messages
+                (size, msg_type, body, message), sender = await self.api_recv_queue.get()
+                # Get oldest unhandled message
+                self.logger.debug("Gossip got api message from %s", sender)
+                await self._handle_internal(msg_type, sender, message)  # Handle api message
+        except RuntimeError as e:
+            if e.args[0] == "Event loop is closed":
+                self.logger.debug("Stopped: API queue was closed.")
+            else:
+                raise e
 
     async def _forward_announce(self, message: bytes):
         """
