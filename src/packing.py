@@ -55,26 +55,6 @@ def unpack_hello(payload):
     return res
 
 
-'''
-def pack_peer_request():
-    msg = b''
-    msg += pack(">HL", MessageType.GOSSIP_PEER_REQUEST, 5)  # TODO
-    # TODO: sinnvoller Wert für die nonce
-    msg += pack(">Q", 0)
-    msg = pack(">H", 2 + len(msg)) + msg
-    return msg
-
-
-def unpack_peer_request(payload):
-    degree = unpack(">L", payload[:4])[0]
-    nonce = unpack(">L", payload[4:12])[0]
-
-    ret = {'degree': degree, 'nonce': nonce}
-    return ret
-
-'''
-
-
 def pack_peer_response(neighbors, sender):
     """
     Build PEER_RESPONSE

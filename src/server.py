@@ -54,22 +54,34 @@ class Server():
     Assembles and sends message to all the known peers with an established connection.
     """
 
-    async def _send_msg_to_all(self, message):
+    async def _send_msg_to_all(self, message, exclude_list):
+        """
+        Sends the message to all but the ones in the exclude list.
+        """
         con = []
         async with self.lock_c:
+            # To reduce the lock time just copy the connections to a local list and then send
             for p in self._connections.get_all_connections():
-                con.append(p)
-        for peer in con:
-            await self._send_msg(peer, message)
+                con.append((p, self._connections.get_streams(p)))
+        for peer, conn in con:
+            if conn not in exclude_list:
+                await self._send_msg(peer, message)
 
-    async def _send_msg_to_degree(self, message, degree):
+    async def _send_msg_to_degree(self, message, degree, exclude_list=[]):
         """
         Sends message to up to degree peers from the peer list.
+        :param message:
+        :param degree:
+        :param exclude_list: Can contain stream tuple or peer to exclude 
         """
+        print("Exclude list", exclude_list)
         async with self.lock_c:
             random_peers = self._connections.get_random_peers(degree)
         for peer in random_peers:
-            await self._send_msg(peer, message)
+            async with self.lock_c:
+                streams = self._connections.get_streams(peer)
+            if streams not in exclude_list or peer in exclude_list:
+                await self._send_msg(peer, message)
 
     async def _send_msg(self,
                         receiver: Union[Peer, Tuple[asyncio.StreamReader, asyncio.StreamWriter]],
@@ -100,6 +112,7 @@ class Server():
                 reader, writer = self._connections.get_streams(receiver)
             if writer is None:
                 reader, writer = await self._create_new_connection(receiver)
+                pass
             if writer is None:
                 return False
         elif isinstance(receiver, tuple):
@@ -226,6 +239,7 @@ class P2PServer(Server):
             bootstrapper[0], bootstrapper[1])
         # To check wether the received challenge belongs to a known nonce.
         self._pending_validation = {}  # Stream tuple -> nonce
+        self._establishing = set() # Lists all peers that may be in the peer list but have not succeed the handshake
         self._peer_threshold = 2  # TODO
 
         if self._bootstrapper is not None:
@@ -271,7 +285,7 @@ class P2PServer(Server):
                 elif isinstance(recv, Peer) or isinstance(recv, tuple):
                     await self._send_msg(recv, msg)
                 else:
-                    await self._send_msg_to_all(msg)
+                    await self._send_msg_to_degree(msg, self._degree, recv)
 
         except:
             self._logger.exception("Failure in sending message")
@@ -293,42 +307,25 @@ class P2PServer(Server):
         match msg_type:
             case MessageType.GOSSIP_HELLO:
                 await self._send_verification_request(reader, writer)
-                """
-                if self._bootstrapper is None:
-                    # First, request PoW, then may add to peer list
-                    # Send nonce
-                    await self._send_verification_request(reader, writer)
-                else:
-                    await self._receive_gossip_hello(data, reader, writer)
-                """
             case MessageType.GOSSIP_VERIFICATION_REQUEST:
-                # TODO: Muss bootstapper sich auch irgendwo verifizieren?
                 await self._receive_verification_request(data, reader, writer)
             case MessageType.GOSSIP_VERIFICATION_RESPONSE:
                 await self._receive_verification_response(data, reader, writer)
             case MessageType.GOSSIP_PEER_RESPONSE:
-                await self._receive_peer_response(data, msg_len)
+                await self._receive_peer_response(data, msg_len, new_peer)
             case MessageType.GOSSIP_PUSH:
-                await self._receive_push_update(data)
+                await self._receive_push_update(data, reader, writer)
             case MessageType.PING:
                 pass  # Do nothing
             case _:
                 await self.recv_queue.put((msg, (reader, writer)))
-
-    """
-    async def _send_peer_request(self, peer):
-        # Build GOSSIP PEER REQUEST
-        msg = pack_peer_request()
-        # Put message into send_queue
-        await self.send_queue.put((msg, peer))
-    """
 
     async def _send_peer_response(self, sender):
         msg = pack_peer_response(
             self._connections.get_all_connections(), sender)
         await self.send_queue.put((msg, sender))
 
-    async def _receive_peer_response(self, msg, msg_len):
+    async def _receive_peer_response(self, msg, msg_len, sender):
         """
         Parses PEER_RESPONSE and update the peer list.
         At most half of the cache size is updated -> A single malicious
@@ -338,6 +335,7 @@ class P2PServer(Server):
         :param msg_len: Length of the PEER_RESPONSE package
         """
         no_updates = 0  # Counts the number of updates
+        self._establishing.remove(sender)
         data = unpack_peer_response(msg, msg_len)
         capacity = self._connections.get_capacity()
         for peer_dir in data['peer_list']:
@@ -357,44 +355,31 @@ class P2PServer(Server):
 
     async def _send_gossip_hello(self, receiver):
         msg = pack_hello(self.host)
-        print("Send hello")
+        self._establishing.add(receiver)
         await self.send_queue.put((msg, receiver))
 
-    async def _receive_gossip_hello(self, msg, reader, writer):
-        data = unpack_hello(msg)
-        peer = Peer(data['addr'], data['port'])
-        async with self.lock_c:
-            await self._connections.update_connection(peer, reader, writer)
-        # Send my view to the new one
-        await self._send_peer_response(peer)
-        # PUSH the new one to all other
-        await self._send_push_update(peer, 1)
-
-    async def _send_push_update(self, peer, ttl):
-        # TODO: Was ist eine sinnolle ttl?
+    async def _send_push_update(self, peer, ttl, exclude_list):
         print(str(self._connections))
         msg = pack_push_update(peer, ttl)
-        # TODO: none?
-        await self.send_queue.put((msg, "ALL"))
+        exclude_list.extend(self._establishing)
+        await self.send_queue.put((msg, exclude_list))
 
-    async def _receive_push_update(self, msg):
+    async def _receive_push_update(self, msg, reader, writer):
         data = unpack_push_update(msg)
         new_peer = Peer(data['addr'], data['port'])
 
-        # This check should prevent peers near the initiator to
-        # receive the push message too many times
-        if data['ttl'] < self._max_ttl / 2:
-            if new_peer != self.host:
-                await self.lock_c.acquire()
-                if self._connections.get_streams(new_peer) == (None, None):
-                    await self._connections.update_connection(new_peer, None, None)
-                    self.lock_c.release()
-                    self._logger.debug("Say hello to %s" % new_peer)
-                    await self._send_gossip_hello(new_peer)
-                else:
-                    self.lock_c.release()
-        if data['ttl'] > 0:
-            await self._send_push_update(new_peer, data['ttl'] - 1)
+        if new_peer != self.host:
+            await self.lock_c.acquire()
+            if self._connections.get_streams(new_peer) == (None, None):
+                await self._connections.update_connection(new_peer, None, None)
+                self.lock_c.release()
+                self._logger.debug("Say hello to %s" % new_peer)
+                await self._send_gossip_hello(new_peer)
+            else:
+                self.lock_c.release()
+
+            if data['ttl'] > 0:
+                await self._send_push_update(new_peer, data['ttl'] - 1, [(reader, writer)])
 
     async def _send_verification_request(self, reader, writer):
         if (reader, writer) in self._pending_validation:
@@ -405,7 +390,6 @@ class P2PServer(Server):
         self._logger.debug("Generate nonce: %i" % nonce)
         msg = pack_verification_request(nonce)
         await self.send_queue.put((msg, (reader, writer)))
-        print(str(self.send_queue))
         self._pending_validation.update({(reader, writer): nonce})
 
     async def _receive_verification_request(self, msg, reader, writer):
@@ -439,7 +423,8 @@ class P2PServer(Server):
                 self._logger.warn("Closing failed")
         else:
             await self._send_peer_response(data['peer'])
-            await self._send_push_update(data['peer'], self._max_ttl)
+            if self._bootstrapper is None:
+                await self._send_push_update(data['peer'], self._max_ttl, [(reader, writer)])
 
     def remove_from_pending_nonces(self, reader, writer):
         if (reader, writer) in self._pending_validation:
