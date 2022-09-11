@@ -144,7 +144,7 @@ class TestP2PServer(IsolatedAsyncioTestCase):
 
     ])
     async def test_handle_received_message(self, msg, msg_ret):
-        with patch('util.generate_nonce', return_value=0):
+        with patch('util.PoW.generate_nonce', return_value=0):
             sq = asyncio.Queue()
             rq = asyncio.Queue()
             r = generate_stream_mock_read(None)
@@ -230,7 +230,6 @@ class TestP2PServer(IsolatedAsyncioTestCase):
         ([Peer("127.0.0.1", 4), Peer("127.0.0.1", 5), Peer("127.0.0.1", 6)], 1),
         ([Peer("127.0.0.1", 1), Peer("127.0.0.1", 5), Peer("127.0.0.1", 6)], 2)
     ])
-
     async def test_handle_received_message_GOSSIP_PEER_RESPONSE_2(self, peer_list_resp, queue_S):
         sq = asyncio.Queue()
         rq = asyncio.Queue()

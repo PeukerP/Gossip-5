@@ -1,4 +1,4 @@
-from util import *
+from util import PoW
 from unittest import TestCase
 
 
@@ -6,8 +6,8 @@ class TestPoW(TestCase):
     def test_pow(self):
         nonce = 0
 
-        challenge = do_pow(nonce)
-        verify = verify_pow(nonce, challenge)
+        challenge = PoW.do_pow(nonce)
+        verify = PoW.verify_pow(nonce, challenge)
 
         assert challenge == 66885
         assert verify

@@ -45,24 +45,27 @@ class Module(object):
         self.type_of_data = type_of_data
 
 
-def do_pow(nonce: int) -> int:
-    n = nonce.to_bytes(8, 'little')
-    for i in range(0xffffffffffffffff):
-        res = sha256(n + i.to_bytes(8, 'little')).digest()
-        if res[0:2] == b'00':
-            return i
-    return 0
+class PoW():
+    @staticmethod
+    def do_pow(nonce: int) -> int:
+        n = nonce.to_bytes(8, 'little')
+        for i in range(0xffffffffffffffff):
+            res = sha256(n + i.to_bytes(8, 'little')).digest()
+            if res[0:2] == b'00':
+                return i
+        return 0
 
+    @staticmethod
+    def verify_pow(nonce: int, challenge: int) -> bool:
+        sha = sha256(nonce.to_bytes(8, 'little') +
+                     challenge.to_bytes(8, 'little')).digest()
+        if sha[0:2] != b'00':
+            return False
+        return True
 
-def verify_pow(nonce: int, challenge: int) -> bool:
-    sha = sha256(nonce.to_bytes(8, 'little') + challenge.to_bytes(8, 'little')).digest()
-    if sha[0:2] != b'00':
-        return False
-    return True
-
-
-def generate_nonce():
-    '''
-    Generate random number and return it
-    '''
-    return randint(0, 0xffffffffffffffff)
+    @staticmethod
+    def generate_nonce() -> int:
+        """
+        Generate random number and return it
+        """
+        return randint(0, 0xffffffffffffffff)

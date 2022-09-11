@@ -15,15 +15,11 @@ def split_address_into_tuple(address):
     port = None
     pattern_v4_ip = r"([\d]{1-3}.[\d]{1-3}.[\d]{1-3}.[\d]{1-3}):([\d]+)"
     pattern_name = r"([\w.-]+):([\d]+)"
-    pattern_v6 = r"\[([a-f\d]*:[a-f\d]*:[a-f\d]*:[a-f\d]*:[a-f\d]*:[a-f\d]*:[a-f\d]*:[a-f\d]*)\]:([\d]+)"
 
     res = re.match(pattern_v4_ip, address)
     if res is None:
         # try name
         res = re.match(pattern_name, address)
-    if res is None:
-        # try IPv6
-        res = re.match(pattern_v6, address)
     if res is None:
         print("%s has the wrong format" % address)
         exit(1)
@@ -42,7 +38,6 @@ def parse_config_file(config_file):
     options = ['cache_size', 'degree',
                'bootstrapper', 'p2p_address', 'api_address']
     config = ConfigObj(config_file)
-    # config.read()
     if 'gossip' not in config:
         print("section 'gossip' is missing in .ini file")
         exit(1)
@@ -93,13 +88,10 @@ def main():
     api_send_queue = asyncio.Queue()
     api_recv_queue = asyncio.Queue()
 
-    # TODO: Dieses format vereinheitlichen
     # Send queue: gossip->out
     #   Items: (raw_msg, recv)
     # Recv queue: out->gossip
     #   Items: (msg, sender) msg=(size, type, body, raw_msg)
-
-    # We also need to init and start the Gossip handler here
 
     eloop = asyncio.new_event_loop()
 
