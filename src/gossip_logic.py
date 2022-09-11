@@ -113,7 +113,7 @@ class GossipHandler:
         """
         data_type = message[6:8]  # Get data type the module wants to be notified of
         self.notify.append(Module(sender, data_type))  # Add module to notifiers list
-        self.logger.debug("Module %s asked to get notified for data type %s", sender, data_type.decode())
+        self.logger.debug("Module %s asked to get notified for data type %s", sender, data_type)
 
     async def _send_notification(self, ttl: int, msg_id: bytes, data_type: bytes, data: bytes):
         """
@@ -142,7 +142,7 @@ class GossipHandler:
             # Build message for GOSSIP_PEER_NOTIFICATION
             self.waiting_for_validation.update({msg_id: (peer_message, time.time())})
             # Add message to waiting dictionary
-            self.logger.debug("Message is waiting for validation: msgID %s ", msg_id.decode())
+            self.logger.debug("Message is waiting for validation: msgID %s ", msg_id)
 
     def _remove_old_waiting(self):
         """
@@ -169,12 +169,12 @@ class GossipHandler:
                 peer_notification_message: bytes = self.waiting_for_validation[msg_id][0]  # Get message from dictionary
                 await self.p2p_send_queue.put((peer_notification_message, None))  # Send Message
                 self.spread.update({msg_id: time.time()})  # Save message as spread
-                self.logger.debug("Message was spread: msgID %s ", msg_id.decode())
-                self.logger.debug("Sent validated message from waiting dictionary: msgID %s", msg_id.decode())
+                self.logger.debug("Message was spread: msgID %s ", msg_id)
+                self.logger.debug("Sent validated message from waiting dictionary: msgID %s", msg_id)
                 self._remove_old_spread()  # Clean spread dictionary
             else:  # Message is not validate-able
                 self.logger.warning("Message validation failed, message will be removed and not send: msgID %s",
-                                    msg_id.decode())
+                                    msg_id)
             del self.waiting_for_validation[msg_id]
             # Remove messages that have been handled or that failed to be validated
 
@@ -186,7 +186,7 @@ class GossipHandler:
         for msg_id in self.spread:  # Check all spread messageIDs
             if time.time() - self.spread[msg_id] > self.suppress_circular_messages_time:  # If msgID is expired
                 del self.spread[msg_id]  # Remove msgID from spread dictionary
-                self.logger.debug("Removed old msgID from spread dictionary: %s", msg_id.decode())
+                self.logger.debug("Removed old msgID from spread dictionary: %s", msg_id)
 
     def start(self):
         """

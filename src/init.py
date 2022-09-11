@@ -2,6 +2,7 @@ import asyncio
 import re
 import socket
 import logging
+import os
 from argparse import ArgumentParser
 from configobj import ConfigObj
 
@@ -81,7 +82,8 @@ def main():
                         default=600)
     args = parser.parse_args()
 
-    logging.basicConfig(format='%(levelname)s - %(name)s - %(message)s', filename='server.log', encoding='utf-8',
+    logger_name = os.path.splitext(os.path.basename(args.config_file))[0]
+    logging.basicConfig(format='%(levelname)s - ' + logger_name + ' - %(name)s - %(message)s', filename='server.log', encoding='utf-8',
                         level=logging.DEBUG)
     logger = logging.getLogger("init_main")
 
