@@ -73,17 +73,24 @@ def parse_config_file(config_file):
 
 
 def main():
-    gossip_suppress_circular_messages_time: int = 600  # TODO: Parameter akzeptieren
-    gossip_validation_wait_time: int = 60  # TODO: Parameter akzeptieren
     parser = ArgumentParser()
     parser.add_argument('-c', dest='config_file',
                         help='Give the path to the configuration file.', type=str, required=True)
+    parser.add_argument('-v', dest='validation_time', help="Time in seconds to wait for a message to be validated.", type=int, default=60)
+    parser.add_argument('-s', dest='spread_time', help="Time in seconds to storage a messageID to suppress circulating massages.", type=int,
+                        default=600)
     args = parser.parse_args()
 
-    configs = parse_config_file(args.config_file)
+    logging.basicConfig(format='%(levelname)s - %(name)s - %(message)s', filename='server.log', encoding='utf-8',
+                        level=logging.DEBUG)
+    logger = logging.getLogger("init_main")
 
-    logging.basicConfig(format='%(levelname)s - %(name)s - %(message)s', filename='server.log',
-                        encoding='utf-8', level=logging.DEBUG)
+    configs = parse_config_file(args.config_file)
+    logger.debug("Config path: %s", args.config_file)
+    gossip_validation_wait_time: int = args.validation_time
+    logger.debug("Validation wait time set to: %i", gossip_validation_wait_time)
+    gossip_suppress_circular_messages_time: int = args.spread_time
+    logger.debug("Spread suppress time set to: %i", gossip_suppress_circular_messages_time)
 
     p2p_send_queue = asyncio.Queue()
     p2p_recv_queue = asyncio.Queue()
@@ -110,8 +117,6 @@ def main():
                            configs['cache_size'], configs['degree'], configs['bootstrapper'])
     p2p_server.start()
 
-    gossip_handler = GossipHandler(
-        p2p_send_queue, p2p_recv_queue, api_send_queue, api_recv_queue, eloop)
     gossip_handler = GossipHandler(p2p_send_queue, p2p_recv_queue, api_send_queue, api_recv_queue, eloop,
                                    gossip_suppress_circular_messages_time, gossip_validation_wait_time)
     gossip_handler.start()
