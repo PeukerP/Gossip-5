@@ -239,7 +239,6 @@ class P2PServer(Server):
             bootstrapper[0], bootstrapper[1])
         # To check wether the received challenge belongs to a known nonce.
         self._pending_validation = {}  # Stream tuple -> nonce
-        self._establishing = set() # Lists all peers that may be in the peer list but have not succeed the handshake
         self._peer_threshold = 2  # TODO
 
         if self._bootstrapper is not None:
@@ -293,11 +292,6 @@ class P2PServer(Server):
             if self.lock_c.locked():
                 self.lock_c.release()
 
-    async def _send_msg(self, receiver, message):
-        if not await super()._send_msg(receiver, message):
-            if receiver in self._establishing:
-                self._establishing.remove(receiver)
-
     async def _handle_receiving(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """
         If connection is closed, remove reader,writer from pending_nonces
@@ -345,7 +339,6 @@ class P2PServer(Server):
         :param msg_len: Length of the PEER_RESPONSE package
         """
         no_updates = 0  # Counts the number of updates
-        #self._establishing.remove(sender)
         data = unpack_peer_response(msg, msg_len)
         capacity = self._connections.get_capacity()
         for peer_dir in data['peer_list']:
@@ -365,13 +358,11 @@ class P2PServer(Server):
 
     async def _send_gossip_hello(self, receiver):
         msg = pack_hello(self.host)
-        #self._establishing.add(receiver)
         await self.send_queue.put((msg, receiver))
 
     async def _send_push_update(self, peer, ttl, exclude_list):
         print(str(self._connections))
         msg = pack_push_update(peer, ttl)
-        exclude_list.extend(self._establishing)
         await self.send_queue.put((msg, exclude_list))
 
     async def _receive_push_update(self, msg, reader, writer):
