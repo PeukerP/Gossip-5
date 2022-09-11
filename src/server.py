@@ -200,11 +200,12 @@ class Server():
 
 class P2PServer(Server):
     '''
-    Implements the P2P Server 
+    Implements the P2P Server
     '''
 
-    def __init__(self, server, host, port, max_ttl, send_queue: asyncio.PriorityQueue,
-                 recv_queue: asyncio.PriorityQueue, event_loop, cache_size, degree, bootstrapper=None):
+    def __init__(self, server, host, port, max_ttl,
+                 send_queue: asyncio.PriorityQueue, recv_queue: asyncio.PriorityQueue, event_loop,
+                 cache_size, degree, bootstrapper=None):
         super().__init__(server, host, port, send_queue, recv_queue, event_loop)
         self._degree = degree
         self._cache_size = cache_size
@@ -260,32 +261,38 @@ class P2PServer(Server):
         msg_len, msg_type, data, raw_msg = msg
 
         self._logger.debug("Received from %s %s" % (new_peer, msg))
-        if msg_type == MessageType.GOSSIP_HELLO:
-            if self._bootstrapper is None:
-                # First, request PoW, then may add to peer list
-                # Send nonce
+        match msg_type:
+            case MessageType.GOSSIP_HELLO:
                 await self._send_verification_request(reader, writer)
-            else:
-                await self._receive_gossip_hello(data, reader, writer)
-        elif msg_type == MessageType.GOSSIP_VERIFICATION_REQUEST:
+                '''
+                if self._bootstrapper is None:
+                    # First, request PoW, then may add to peer list
+                    # Send nonce
+                    await self._send_verification_request(reader, writer)
+                else:
+                    await self._receive_gossip_hello(data, reader, writer)
+                '''
+            case MessageType.GOSSIP_VERIFICATION_REQUEST:
             # TODO: Muss bootstapper sich auch irgendwo verifizieren?
-            await self._receive_verification_request(data, reader, writer)
-        elif msg_type == MessageType.GOSSIP_VERIFICATION_RESPONSE:
-            await self._receive_verification_response(data, reader, writer)
-        elif msg_type == MessageType.GOSSIP_PEER_RESPONSE:
-            await self._receive_peer_response(data, msg_len)
-        elif msg_type == MessageType.GOSSIP_PUSH:
-            await self._receive_push_update(data)
-        elif msg_type == MessageType.PING:
-            pass  # Do nothing
-        else:
-            await self.recv_queue.put((msg, (reader, writer)))
+                await self._receive_verification_request(data, reader, writer)
+            case MessageType.GOSSIP_VERIFICATION_RESPONSE:
+                await self._receive_verification_response(data, reader, writer)
+            case MessageType.GOSSIP_PEER_RESPONSE:
+                await self._receive_peer_response(data, msg_len)
+            case MessageType.GOSSIP_PUSH:
+                await self._receive_push_update(data)
+            case MessageType.PING:
+                pass  # Do nothing
+            case _:
+                await self.recv_queue.put((msg, (reader, writer)))
 
+    '''
     async def _send_peer_request(self, peer):
         # Build GOSSIP PEER REQUEST
         msg = pack_peer_request()
         # Put message into send_queue
         await self.send_queue.put((msg, peer))
+    '''
 
     async def _send_peer_response(self, sender):
         msg = pack_peer_response(
@@ -293,15 +300,28 @@ class P2PServer(Server):
         await self.send_queue.put((msg, sender))
 
     async def _receive_peer_response(self, msg, msg_len):
+        '''
+        Parses PEER_RESPONSE and update the peer list.
+        At most half of the cache size is updated -> A single malicious 
+        PEER_RESPONSE cannot change the whole peer list.
+
+        :param msg: Payload of PEER_RESPONSE
+        :param msg_len: Length of the PEER_RESPONSE package
+        '''
+        no_updates = 0  # Counts the number of updates
         data = unpack_peer_response(msg, msg_len)
+        capacity = self._connections.get_capacity()
         for peer_dir in data['peer_list']:
-            if self._connections.get_capacity() == 0:
+            if capacity == 0 or no_updates > self._cache_size / 2:
                 break
             new_peer = Peer(peer_dir['addr'], peer_dir['port'])
 
+            if new_peer not in self._connections.get_all_connections():
+                no_updates += 1
+                capacity -= 1
+
             if self._connections.get_streams(new_peer) == (None, None):
-                # self._connections.update_connection(new_peer, None, None)
-                await self._send_gossip_hello(new_peer)
+                await self._send_gossip_hello(new_peer) 
 
     async def _send_gossip_hello(self, receiver):
         msg = pack_hello(self.host)
@@ -320,6 +340,7 @@ class P2PServer(Server):
     async def _send_push_update(self, peer, ttl):
         # TODO: Was ist eine sinnolle ttl?
         msg = pack_push_update(peer, ttl)
+        # TODO: none?
         await self.send_queue.put((msg, "ALL"))
 
     async def _receive_push_update(self, msg):
@@ -341,6 +362,7 @@ class P2PServer(Server):
 
     async def _send_verification_request(self, reader, writer):
         nonce = generate_nonce()
+        print("Nonce ", nonce)
         self._logger.debug("Generate nonce: %i" % nonce)
         msg = pack_verification_request(nonce)
         await self.send_queue.put((msg, (reader, writer)))
@@ -366,7 +388,7 @@ class P2PServer(Server):
             else:
                 self._logger.warning(
                     "Nonce differs: %i but expected %i" % (data['nonce'], old_nonce))
-        self._pending_validation.pop((reader, writer))
+            self._pending_validation.pop((reader, writer))
         if not success:
             try:
                 writer.close()
@@ -375,7 +397,7 @@ class P2PServer(Server):
                 self._logger.warn("Closing failed")
         else:
             await self._send_peer_response(data['peer'])
-            await self._send_push_update(data['peer'], 2)
+            await self._send_push_update(data['peer'], self._max_ttl)
 
 
 class APIServer(Server):

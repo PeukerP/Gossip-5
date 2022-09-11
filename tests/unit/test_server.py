@@ -1,8 +1,9 @@
 import asyncio
 from helper import *
-from util import Peer
+from util import Peer, MessageType
+from packing import *
 from connection import Connections
-from server import Server, APIServer
+from server import Server, APIServer, P2PServer
 from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import Mock, patch
 from parameterized import parameterized
@@ -131,18 +132,210 @@ class TestServer(IsolatedAsyncioTestCase):
             # Do not start() server
             assert not await server._send_msg(peer, msg_empty)
 
-    async def test__handle_receiving(self):
-        # Only test failure since message handling is not implemented by Server
-        with patch.object(Server, "_read_msg", return_value=((1, b''))):
-            with patch.object(Connections, "is_alive", False):
-                server = Server("Test", "0.0.0.0", 123, Mock(), Mock(), Mock())
-                r = Mock()
-                r.getpeername.return_value=("Test", 123)
-                w = Mock()
-                w.get_extra_info.return_value=r
+
+class TestP2PServer(IsolatedAsyncioTestCase):
+    @parameterized.expand([
+        # GOSSIP_HELLO
+        ((10, 508, b'\x7f\x00\x00\x01\x1b\x59', b'\x00\x0a\x01\xfc\x7f\x00\x00\x01\x1b\x59'),
+         b'\x00\x0c\x01\xfa\x00\x00\x00\x00\x00\x00\x00\x00'),
+        # GOSSIP_VERIFICATION_REQUEST with nonce=0
+        ((12, 506, b'\x00\x00\x00\x00\x00\x00\x00\x00', b'\x00\x0c\x01\xfa\x00\x00\x00\x00\x00\x00\x00\x00'),
+         b'\x00\x1a\x01\xfb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71'),
+
+    ])
+    async def test_handle_received_message(self, msg, msg_ret):
+        with patch('util.generate_nonce', return_value=0):
+            sq = asyncio.Queue()
+            rq = asyncio.Queue()
+            r = generate_stream_mock_read(None)
+            w = generate_stream_mock_write(False)
+            server = P2PServer("Test", "127.0.0.1", 6001,
+                               5, sq, rq, None, 5, 4)
+
+            await server._handle_received_message(msg, r, w, Peer("a", 1))
+
+            assert sq.get_nowait() == (msg_ret, (r, w))
+
+            if msg[1] == MessageType.GOSSIP_HELLO:
+                assert server._pending_validation == {(r, w): 0}
+
+    @parameterized.expand([
+        # GOSSIP_VERIFICATION_RESPONSE which is valid
+        ((26, 507, b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71',
+         b'\x00\x1a\x01\xfb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71'),
+         b'\x00\n\x01\xf9\x7f\x00\x00\x01\x1b\x59',
+         b'\x00\x0c\x01\xfd\x00\x05\x7f\x00\x00\x01\x17\x71',
+         True, True),
+        # GOSSIP_VERIFICATION_RESPONSE with wrong nonce
+        ((26, 507, b'\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71',
+         b'\x00\x1a\x01\xfb\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71'),
+         b'\x00\n\x01\xf9\x7f\x00\x00\x01\x1b\x59',
+         b'\x00\x0c\x01\xfd\x00\x05\x7f\x00\x00\x01\x17\x71',
+         False, True),
+        # GOSSIP_VERIFICATION_RESPONSE with wrong challenge
+        ((26, 507, b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\x05\x45\x7f\x00\x00\x01\x17\x71',
+         b'\x00\x1a\x01\xfb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\x05\x45\x7f\x00\x00\x01\x17\x71'),
+         b'\x00\n\x01\xf9\x7f\x00\x00\x01\x1b\x59',
+         b'\x00\x0c\x01\xfd\x00\x05\x7f\x00\x00\x01\x17\x71',
+         False, True),
+        # GOSSIP_VERIFICATION_RESPONSE which is not registered
+        ((26, 507, b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71',
+         b'\x00\x1a\x01\xfb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71'),
+         b'\x00\n\x01\xf9\x7f\x00\x00\x01\x1b\x59',
+         b'\x00\x0c\x01\xfd\x00\x05\x7f\x00\x00\x01\x17\x71',
+         False, False),
+    ])
+    async def test_handle_received_message_GOSSIP_VERIFICATION_RESPONSE(self, msg, msg_ret1, msg_push, is_valid, is_in_pending):
+        sq = asyncio.Queue()
+        rq = asyncio.Queue()
+        r = generate_stream_mock_read(None)
+        w = generate_stream_mock_write(False)
+        server = P2PServer("Test", "127.0.0.1", 6001,
+                           5, sq, rq, None, 5, 4)
+        await server._connections.update_connection(Peer("127.0.0.1", 0x1b59), None, None)
+
+        if is_in_pending:
+            server._pending_validation = {(r, w): 0}
+
+        await server._handle_received_message(msg, r, w, Peer("a", 1))
+
+        assert server._pending_validation == {}
+
+        if is_valid:
+            assert sq.get_nowait() == (msg_ret1, Peer("127.0.0.1", 6001))
+            assert sq.get_nowait() == (msg_push, "ALL")  # TODO: none?
+            assert Peer(
+                "127.0.0.1", 6001) in server._connections.get_all_connections()
+        else:
+            assert sq.empty()
+            assert Peer(
+                "127.0.0.1", 6001) not in server._connections.get_all_connections()
+            w.close.assert_called_once()
+
+    async def test_handle_received_message_GOSSIP_PEER_RESPONSE_1(self):
+        sq = asyncio.Queue()
+        rq = asyncio.Queue()
+        r = generate_stream_mock_read(None)
+        w = generate_stream_mock_write(False)
+        me = Peer("127.0.0.1", 6001)
+        peer_list = [Peer("127.0.0.1", 1), Peer("127.0.0.1", 2), Peer("127.0.0.1", 3)]
+        server = P2PServer("Test", "127.0.0.1", 6001,
+                           5, sq, rq, None, 5, 4)
+        msg = pack_peer_response(peer_list, me)
+
+        await server._handle_received_message((len(msg), MessageType.GOSSIP_PEER_RESPONSE, msg[4:], msg), r, w, Peer("y", 6))
+        assert sq.qsize() == 3
+
+    @parameterized.expand([
+        ([Peer("127.0.0.1", 4), Peer("127.0.0.1", 5), Peer("127.0.0.1", 6)], 1),
+        ([Peer("127.0.0.1", 1), Peer("127.0.0.1", 5), Peer("127.0.0.1", 6)], 2)
+    ])
+
+    async def test_handle_received_message_GOSSIP_PEER_RESPONSE_2(self, peer_list_resp, queue_S):
+        sq = asyncio.Queue()
+        rq = asyncio.Queue()
+        r = generate_stream_mock_read(None)
+        w = generate_stream_mock_write(False)
+        me = Peer("127.0.0.1", 6001)
+        peer_list = [Peer("127.0.0.1", 1), Peer("127.0.0.1", 2), Peer("127.0.0.1", 3)]
+        server = P2PServer("Test", "127.0.0.1", 6001,
+                           5, sq, rq, None, 4, 4)
+        msg = pack_peer_response(peer_list_resp, me)
+
+        for p in peer_list:
+            await server._connections.update_connection(p, None, None)
+
+        await server._handle_received_message((len(msg), MessageType.GOSSIP_PEER_RESPONSE, msg[4:], msg), r, w, Peer("y", 6))
+        assert sq.qsize() == queue_S
 
 
-#    def TestP2PServer(IsolatedAsyncioTestCase):
+    @parameterized.expand([
+        (4, 1),
+        (1, 2)
+    ])
+    async def test_handle_received_message_GOSSIP_PUSH_1(self, ttl, qsize):
+        sq = asyncio.Queue()
+        rq = asyncio.Queue()
+        r = generate_stream_mock_read(None)
+        w = generate_stream_mock_write(False)
+        me = Peer("127.0.0.1", 6001)
+        other = Peer("127.0.0.1", 6011)
+        server = P2PServer("Test", "127.0.0.1", 6001,
+                           5, sq, rq, None, 4, 4)
+        msg = pack_push_update(other, ttl)
+
+        await server._handle_received_message((len(msg), MessageType.GOSSIP_PUSH, msg[4:], msg), r, w, other)
+
+        assert sq.qsize() == qsize
+        if ttl < 5 / 2:
+            assert len(server._connections.get_all_connections()) == 1
+        else:
+            assert len(server._connections.get_all_connections()) == 0
+
+    async def test_handle_received_message_GOSSIP_PUSH_2(self):
+        # Replace in peer list
+        sq = asyncio.Queue()
+        rq = asyncio.Queue()
+        r = generate_stream_mock_read(None)
+        w = generate_stream_mock_write(False)
+        me = Peer("127.0.0.1", 6001)
+        other = Peer("127.0.0.1", 6011)
+        peer_list = [Peer("127.0.0.1", 1), Peer("127.0.0.1", 2), Peer("127.0.0.1", 3)]
+        server = P2PServer("Test", "127.0.0.1", 6001,
+                           5, sq, rq, None, 3, 3)
+        msg = pack_push_update(other, 0)
+
+        for p in peer_list:
+            await server._connections.update_connection(p, None, None)
+
+        await server._handle_received_message((len(msg), MessageType.GOSSIP_PUSH, msg[4:], msg), r, w, other)
+
+        assert sq.qsize() == 1
+        assert other in server._connections.get_all_connections()
+        assert len(server._connections.get_all_connections()) == 3
+
+    async def test_handle_received_message_GOSSIP_PUSH_3(self):
+        # Does not replace or add anything
+        sq = asyncio.Queue()
+        rq = asyncio.Queue()
+        r = generate_stream_mock_read(None)
+        w = generate_stream_mock_write(False)
+        me = Peer("127.0.0.1", 6001)
+        other = Peer("127.0.0.1", 6011)
+        peer_list = [Peer("127.0.0.1", 1), Peer("127.0.0.1", 2), Peer("127.0.0.1", 3)]
+        server = P2PServer("Test", "127.0.0.1", 6001,
+                           5, sq, rq, None, 3, 3)
+        msg = pack_push_update(me, 0)
+
+        for p in peer_list:
+            await server._connections.update_connection(p, None, None)
+
+        await server._handle_received_message((len(msg), MessageType.GOSSIP_PUSH, msg[4:], msg), r, w, other)
+
+        assert sq.qsize() == 0
+        for p in peer_list:
+            assert p in server._connections.get_all_connections()
+
+    async def test_handle_received_message_PING(self):
+        sq = asyncio.Queue()
+        rq = asyncio.Queue()
+        r = generate_stream_mock_read(None)
+        w = generate_stream_mock_write(False)
+        other = Peer("127.0.0.1", 6011)
+        peer_list = [Peer("127.0.0.1", 1), Peer("127.0.0.1", 2), Peer("127.0.0.1", 3)]
+        server = P2PServer("Test", "127.0.0.1", 6001,
+                           5, sq, rq, None, 3, 3)
+        msg = b'\x00\x04\x01\xfe'
+
+        for p in peer_list:
+            await server._connections.update_connection(p, None, None)
+
+        await server._handle_received_message((len(msg), MessageType.PING, b'', msg), r, w, other)
+
+        assert sq.empty()
+        for p in peer_list:
+            assert p in server._connections.get_all_connections()
+
 
 if __name__ == "__main__":
     logger.exception.return_value = None
