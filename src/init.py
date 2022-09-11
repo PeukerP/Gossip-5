@@ -33,8 +33,7 @@ def split_address_into_tuple(address):
 
 
 def parse_config_file(config_file):
-    options = ['cache_size', 'degree',
-               'bootstrapper', 'p2p_address', 'api_address']
+    options = ['cache_size', 'degree', 'bootstrapper', 'p2p_address', 'api_address']
     config = ConfigObj(config_file)
     if 'gossip' not in config:
         print("section 'gossip' is missing in .ini file")
@@ -72,20 +71,26 @@ def parse_config_file(config_file):
 
 def main():
     parser = ArgumentParser()
+    # Read the command line arguments:
+    # For config file path
     parser.add_argument('-c', dest='config_file',
                         help='Give the path to the configuration file.', type=str, required=True)
+    # For GossipHandler.validation_wait_time
     parser.add_argument('-v', dest='validation_time', help="Time in seconds to wait for a message to be validated.",
                         type=int, default=60)
+    # For GossipHandler.suppress_circular_messages_time
     parser.add_argument('-s', dest='spread_time',
                         help="Time in seconds to storage a messageID to suppress circulating massages.", type=int,
                         default=600)
     args = parser.parse_args()
 
+    # Get the name of the config file to print as name in logs
     logger_name = os.path.splitext(os.path.basename(args.config_file))[0]
     logging.basicConfig(format='%(levelname)s - ' + logger_name + ' - %(name)s - %(message)s', filename='server.log',
                         encoding='utf-8', level=logging.DEBUG)
     logger = logging.getLogger("init_main")
 
+    # Set parameters from command line
     configs = parse_config_file(args.config_file)
     logger.debug("Config path: %s", args.config_file)
     gossip_validation_wait_time: int = args.validation_time
@@ -118,6 +123,7 @@ def main():
                            configs['cache_size'], configs['degree'], configs['bootstrapper'])
     p2p_server.start()
 
+    # Start GossipHandler
     gossip_handler = GossipHandler(p2p_send_queue, p2p_recv_queue, api_send_queue, api_recv_queue, eloop,
                                    gossip_suppress_circular_messages_time, gossip_validation_wait_time)
     gossip_handler.start()
