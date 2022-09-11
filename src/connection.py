@@ -145,7 +145,7 @@ class Connections():
         This function checks if a connection is still alive by sending a PING message
         to the writer stream.
         """
-        #established = False
+        # established = False
         writer = None
         # Build PING message
         msg = pack(">HH", 4, MessageType.PING)
@@ -159,7 +159,7 @@ class Connections():
         elif stream_tuple is not None:
             # await self.establish_connection(peer)
             reader, writer = stream_tuple
-            #established = True
+            # established = True
             # return False
         if writer is None:
             return False
