@@ -158,10 +158,8 @@ class Connections():
         if peer is not None and peer in self.__connections:
             writer = self.__connections[peer][1]
         elif stream_tuple is not None:
-            # await self.establish_connection(peer)
             reader, writer = stream_tuple
-            # established = True
-            # return False
+
         if writer is None:
             return False
 
@@ -174,14 +172,6 @@ class Connections():
         except:
             self.__logger.warning("Error sending to %s" % peer)
             return False
-        # if established:
-        #   # Schließe connection wieder
-        #    try:
-        #        writer.close()
-        #        await writer.wait_closed()
-        #    except:
-        #        # TODO
-        #        pass
 
         return True
 

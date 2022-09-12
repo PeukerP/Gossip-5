@@ -266,16 +266,15 @@ class P2PServer(Server):
                                 await self._send_gossip_hello(self._bootstrapper)
                             else:
                                 # Request a peer list from a random peer from the view
-                                await self._send_peer_request(list(rp)[0])  
+                                await self._send_peer_request(list(rp)[0])
                     except e:
                         # In case of an exception during locked lock
                         self.lock_c.release()
                         raise e
-                    
+
                     self.lock_c.release()
         except:
             self._logger.exception("Failure in sending message")
-                
 
     async def _handle_receiving(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """
@@ -300,7 +299,7 @@ class P2PServer(Server):
             case MessageType.GOSSIP_PEER_REQUEST:
                 await self._send_peer_response((reader, writer))
             case MessageType.GOSSIP_PEER_RESPONSE:
-                await self._receive_peer_response(data, msg_len, new_peer)
+                await self._receive_peer_response(data, msg_len, (reader, writer))
             case MessageType.GOSSIP_PUSH:
                 await self._receive_push_update(data, reader, writer)
             case MessageType.PING:
@@ -334,6 +333,14 @@ class P2PServer(Server):
         :param msg: Payload of PEER_RESPONSE
         :param msg_len: Length of the PEER_RESPONSE package
         """
+        # Only accept views from neighbors
+        # -> A malicious peer cannot just connect to us and give his list
+        await self.lock_c.acquire()
+        if sender not in self._connections.get_all_connections().values():
+            self.lock_c.release()
+            return
+        self.lock_c.release()
+
         no_updates = 0  # Counts the number of updates
         data = unpack_peer_response(msg, msg_len)
         capacity = self._connections.get_capacity()
@@ -372,6 +379,14 @@ class P2PServer(Server):
         data = unpack_push_update(msg)
         new_peer = Peer(data['addr'], data['port'])
 
+        # Only accept pushes from neighbors
+        # -> A malicious peer cannot just connect to us and push
+        await self.lock_c.acquire()
+        if (reader, writer) not in self._connections.get_all_connections().values():
+            self.lock_c.release()
+            return
+        self.lock_c.release()
+
         if new_peer != self.host:
             await self.lock_c.acquire()
             if self._connections.get_streams(new_peer) == (None, None):
@@ -400,6 +415,13 @@ class P2PServer(Server):
             self._pending_validation.update({(reader, writer): nonce})
 
     async def _receive_verification_request(self, msg, reader, writer):
+
+        await self.lock_c.acquire()
+        if (reader, writer) not in self._connections.get_all_connections().values():
+            self.lock_c.release()
+            return
+        self.lock_c.release()
+
         data = unpack_verification_request(msg)
         nonce = data['nonce']
         msg = pack_verification_response(nonce, self.host)

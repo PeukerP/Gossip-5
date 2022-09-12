@@ -73,7 +73,7 @@ def parse_config_file(config_file):
         res.update({'bootstrapper': None})
 
     if 'p2p_ttl' in config['gossip']:
-        res.update({'p2p_ttl': p2p_ttl})
+        res.update({'p2p_ttl': int(p2p_ttl)})
     else:
         res.update({'p2p_ttl': 5})
     return res
