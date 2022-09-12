@@ -336,7 +336,7 @@ class P2PServer(Server):
         # Only accept views from neighbors
         # -> A malicious peer cannot just connect to us and give his list
         await self.lock_c.acquire()
-        if sender not in self._connections.get_all_connections().values():
+        if sender not in set(self._connections.get_all_connections().values()):
             self.lock_c.release()
             return
         self.lock_c.release()
@@ -382,7 +382,7 @@ class P2PServer(Server):
         # Only accept pushes from neighbors
         # -> A malicious peer cannot just connect to us and push
         await self.lock_c.acquire()
-        if (reader, writer) not in self._connections.get_all_connections().values():
+        if (reader, writer) not in set(self._connections.get_all_connections().values()):
             self.lock_c.release()
             return
         self.lock_c.release()
@@ -417,7 +417,7 @@ class P2PServer(Server):
     async def _receive_verification_request(self, msg, reader, writer):
 
         await self.lock_c.acquire()
-        if (reader, writer) not in self._connections.get_all_connections().values():
+        if (reader, writer) not in set(self._connections.get_all_connections().values()):
             self.lock_c.release()
             return
         self.lock_c.release()

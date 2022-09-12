@@ -147,7 +147,7 @@ class TestServer(IsolatedAsyncioTestCase):
 
 
 class TestP2PServer(IsolatedAsyncioTestCase):
-    async def test_handle_received_message_GOSSIP_VERIFICATION_REQUEST(self):
+    async def test_handle_received_message_GOSSIP_VERIFICATION_REQUEST_1(self):
         with patch('util.PoW.generate_nonce', return_value=0):
             sq = asyncio.Queue()
             rq = asyncio.Queue()
@@ -157,7 +157,24 @@ class TestP2PServer(IsolatedAsyncioTestCase):
                                5, sq, rq, None, 5, 4)
             msg = (12, 506, b'\x00\x00\x00\x00\x00\x00\x00\x00',
                    b'\x00\x0c\x01\xfa\x00\x00\x00\x00\x00\x00\x00\x00')
-            msg_ret = b'\x00\x1a\x01\xfb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71'
+            msg_ret = b'\x00\x1a\x01\xfb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x0f\x52\x7f\x00\x00\x01\x17\x71'
+            await server._handle_received_message(msg, r, w, Peer("a", 1))
+
+            assert sq.empty()
+
+    async def test_handle_received_message_GOSSIP_VERIFICATION_REQUEST_2(self):
+        with patch('util.PoW.generate_nonce', return_value=0):
+            sq = asyncio.Queue()
+            rq = asyncio.Queue()
+            r = generate_stream_mock_read(None)
+            w = generate_stream_mock_write(False)
+            server = P2PServer("Test", "127.0.0.1", 6001,
+                               5, sq, rq, None, 5, 4)
+            msg = (12, 506, b'\x00\x00\x00\x00\x00\x00\x00\x00',
+                   b'\x00\x0c\x01\xfa\x00\x00\x00\x00\x00\x00\x00\x00')
+            msg_ret = b'\x00\x1a\x01\xfb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x0f\x52\x7f\x00\x00\x01\x17\x71'
+            await server._connections.update_connection(Peer("a", 1), r, w)
+
             await server._handle_received_message(msg, r, w, Peer("a", 1))
 
             assert sq.get_nowait() == (msg_ret, (r, w))
@@ -186,14 +203,14 @@ class TestP2PServer(IsolatedAsyncioTestCase):
 
     @parameterized.expand([
         # GOSSIP_VERIFICATION_RESPONSE which is valid
-        ((26, 507, b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71',
-         b'\x00\x1a\x01\xfb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71'),
+        ((26, 507, b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x0f\x52\x7f\x00\x00\x01\x17\x71',
+         b'\x00\x1a\x01\xfb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x0f\x52\x7f\x00\x00\x01\x17\x71'),
          b'\x00\n\x01\xf9\x7f\x00\x00\x01\x1b\x59',
          b'\x00\x0c\x01\xfd\x00\x05\x7f\x00\x00\x01\x17\x71',
          True, True, False),
         # GOSSIP_VERIFICATION_RESPONSE with wrong nonce
-        ((26, 507, b'\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71',
-         b'\x00\x1a\x01\xfb\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71'),
+        ((26, 507, b'\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x0f\x52\x7f\x00\x00\x01\x17\x71',
+         b'\x00\x1a\x01\xfb\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x0f\x52\x7f\x00\x00\x01\x17\x71'),
          b'\x00\n\x01\xf9\x7f\x00\x00\x01\x1b\x59',
          b'\x00\x0c\x01\xfd\x00\x05\x7f\x00\x00\x01\x17\x71',
          False, True, False),
@@ -204,8 +221,8 @@ class TestP2PServer(IsolatedAsyncioTestCase):
          b'\x00\x0c\x01\xfd\x00\x05\x7f\x00\x00\x01\x17\x71',
          False, True, False),
         # GOSSIP_VERIFICATION_RESPONSE which is not registered
-        ((26, 507, b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71',
-         b'\x00\x1a\x01\xfb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x05\x45\x7f\x00\x00\x01\x17\x71'),
+        ((26, 507, b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x0f\x52\x7f\x00\x00\x01\x17\x71',
+         b'\x00\x1a\x01\xfb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x0f\x52\x7f\x00\x00\x01\x17\x71'),
          b'\x00\n\x01\xf9\x7f\x00\x00\x01\x1b\x59',
          b'\x00\x0c\x01\xfd\x00\x05\x7f\x00\x00\x01\x17\x71',
          False, False, False),
@@ -222,7 +239,7 @@ class TestP2PServer(IsolatedAsyncioTestCase):
         r = generate_stream_mock_read(None)
         w = generate_stream_mock_write(False)
         if write_fails:
-            w.write.side_effect=Exception()
+            w.write.side_effect = Exception()
         server = P2PServer("Test", "127.0.0.1", 6001,
                            5, sq, rq, None, 5, 4)
         await server._connections.update_connection(Peer("127.0.0.1", 0x1b59), None, None)
@@ -245,6 +262,21 @@ class TestP2PServer(IsolatedAsyncioTestCase):
                 "127.0.0.1", 6001) not in server._connections.get_all_connections()
             w.close.assert_called_once()
 
+    async def test_handle_received_message_GOSSIP_PEER_RESPONSE_0(self):
+        sq = asyncio.Queue()
+        rq = asyncio.Queue()
+        r = generate_stream_mock_read(None)
+        w = generate_stream_mock_write(False)
+        me = Peer("127.0.0.1", 6001)
+        peer_list = [Peer("127.0.0.1", 1), Peer(
+            "127.0.0.1", 2), Peer("127.0.0.1", 3)]
+        server = P2PServer("Test", "127.0.0.1", 6001,
+                           5, sq, rq, None, 5, 4)
+        msg = pack_peer_response(peer_list, me)
+
+        await server._handle_received_message((len(msg), MessageType.GOSSIP_PEER_RESPONSE, msg[4:], msg), r, w, Peer("y", 6))
+        assert sq.qsize() == 0
+
     async def test_handle_received_message_GOSSIP_PEER_RESPONSE_1(self):
         sq = asyncio.Queue()
         rq = asyncio.Queue()
@@ -256,6 +288,22 @@ class TestP2PServer(IsolatedAsyncioTestCase):
         server = P2PServer("Test", "127.0.0.1", 6001,
                            5, sq, rq, None, 5, 4)
         msg = pack_peer_response(peer_list, me)
+
+        await server._handle_received_message((len(msg), MessageType.GOSSIP_PEER_RESPONSE, msg[4:], msg), r, w, Peer("y", 6))
+        assert sq.qsize() == 0
+
+    async def test_handle_received_message_GOSSIP_PEER_RESPONSE_1(self):
+        sq = asyncio.Queue()
+        rq = asyncio.Queue()
+        r = generate_stream_mock_read(None)
+        w = generate_stream_mock_write(False)
+        me = Peer("127.0.0.1", 6001)
+        peer_list = [Peer("127.0.0.1", 1), Peer(
+            "127.0.0.1", 2), Peer("127.0.0.1", 3)]
+        server = P2PServer("Test", "127.0.0.1", 6001,
+                           5, sq, rq, None, 5, 4)
+        msg = pack_peer_response(peer_list, me)
+        await server._connections.update_connection(Peer("a", 1), r, w)
 
         await server._handle_received_message((len(msg), MessageType.GOSSIP_PEER_RESPONSE, msg[4:], msg), r, w, Peer("y", 6))
         assert sq.qsize() == 3
@@ -271,13 +319,14 @@ class TestP2PServer(IsolatedAsyncioTestCase):
         w = generate_stream_mock_write(False)
         me = Peer("127.0.0.1", 6001)
         peer_list = [Peer("127.0.0.1", 1), Peer(
-            "127.0.0.1", 2), Peer("127.0.0.1", 3)]
+            "127.0.0.1", 2)]
         server = P2PServer("Test", "127.0.0.1", 6001,
                            5, sq, rq, None, 4, 4)
         msg = pack_peer_response(peer_list_resp, me)
 
         for p in peer_list:
             await server._connections.update_connection(p, None, None)
+        await server._connections.update_connection(Peer("127.0.0.1", 3), r, w)
 
         await server._handle_received_message((len(msg), MessageType.GOSSIP_PEER_RESPONSE, msg[4:], msg), r, w, Peer("y", 6))
         assert sq.qsize() == queue_S
@@ -313,11 +362,12 @@ class TestP2PServer(IsolatedAsyncioTestCase):
         server = P2PServer("Test", "127.0.0.1", 6001,
                            5, sq, rq, None, 4, 4)
         msg = pack_push_update(other, ttl)
+        await server._connections.update_connection(Peer("a", 1), r, w)
 
         await server._handle_received_message((len(msg), MessageType.GOSSIP_PUSH, msg[4:], msg), r, w, other)
 
         assert sq.qsize() == qsize
-        assert len(server._connections.get_all_connections()) == 1
+        assert len(server._connections.get_all_connections()) == 2
 
     async def test_handle_received_message_GOSSIP_PUSH_2(self):
         # Replace in peer list
@@ -334,7 +384,7 @@ class TestP2PServer(IsolatedAsyncioTestCase):
         msg = pack_push_update(other, 0)
 
         for p in peer_list:
-            await server._connections.update_connection(p, None, None)
+            await server._connections.update_connection(p, r, w)
 
         await server._handle_received_message((len(msg), MessageType.GOSSIP_PUSH, msg[4:], msg), r, w, other)
 

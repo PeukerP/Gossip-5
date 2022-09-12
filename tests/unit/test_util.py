@@ -9,7 +9,7 @@ class TestPoW(TestCase):
         challenge = PoW.do_pow(nonce)
         verify = PoW.verify_pow(nonce, challenge)
 
-        assert challenge == 66885
+        assert challenge == 69458
         assert verify
 
 
