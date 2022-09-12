@@ -94,6 +94,10 @@ def main():
                         type=int, default=60)
     args = parser.parse_args()
 
+    # Create log directory
+    if not os.path.exists('log'):
+        os.mkdir('log')
+
     # Get the name of the config file to print as name in logs
     logger_name = os.path.splitext(os.path.basename(args.config_file))[0]
     log_file_name = "log/server" + time.strftime("%Y%m%d") + ".log"
