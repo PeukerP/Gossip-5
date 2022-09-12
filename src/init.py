@@ -87,11 +87,11 @@ def main():
                         help='Give the path to the configuration file.', type=str, required=True)
     # For GossipHandler.validation_wait_time
     parser.add_argument('-v', dest='validation_time', help="Time in seconds to wait for a message to be validated.",
-                        type=int, default=60)
+                        type=int, default=5)
     # For GossipHandler.suppress_circular_messages_time
     parser.add_argument('-s', dest='spread_time',
                         help="Time in seconds to store a messageID to suppress circulating massages.",
-                        type=int, default=600)
+                        type=int, default=60)
     args = parser.parse_args()
 
     # Get the name of the config file to print as name in logs
