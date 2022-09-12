@@ -50,23 +50,6 @@ class Server():
         """
         raise NotImplementedError
 
-    """
-    Assembles and sends message to all the known peers with an established connection.
-    """
-
-    async def _send_msg_to_all(self, message, exclude_list):
-        """
-        Sends the message to all but the ones in the exclude list.
-        """
-        con = []
-        async with self.lock_c:
-            # To reduce the lock time just copy the connections to a local list and then send
-            for p in self._connections.get_all_connections():
-                con.append((p, self._connections.get_streams(p)))
-        for peer, conn in con:
-            if conn not in exclude_list:
-                await self._send_msg(peer, message)
-
     async def _send_msg_to_degree(self, message, degree, exclude_list=[]):
         """
         Sends message to up to degree peers from the peer list.
@@ -196,7 +179,7 @@ class Server():
         message = b''
         # Whether connection is open can only be tested with writer
         if writer.is_closing():
-            return (-1, b"")
+            return (1, b"")
 
         # Read message header
         # Read size of package
@@ -297,7 +280,8 @@ class P2PServer(Server):
         If connection is closed, remove reader,writer from pending_nonces
         """
         await super()._handle_receiving(reader, writer)
-        self.remove_from_pending_nonces(reader, writer)
+        if (reader, writer) in self._pending_validation:
+            self._pending_validation.pop((reader, writer))
 
     async def _handle_received_message(self, msg, reader, writer, new_peer):
         msg_len, msg_type, data, raw_msg = msg
@@ -366,6 +350,13 @@ class P2PServer(Server):
         await self.send_queue.put((msg, exclude_list))
 
     async def _receive_push_update(self, msg, reader, writer):
+        """
+        Update peer list with peer from msg, if it is not already included.
+        Send a HELLO message to this peer to advertise us to the peer.
+        If the peer from msg is not us, push msg with adapted ttl to
+        at most degree peers from the peer list. Do not send the message
+        back to the sender to reduce traffic.
+        """
         data = unpack_push_update(msg)
         new_peer = Peer(data['addr'], data['port'])
 
@@ -387,7 +378,6 @@ class P2PServer(Server):
             self._logger.debug("Nonce was already sent. Answer or reconnect.")
             return
         nonce = PoW.generate_nonce()
-        print("Nonce ", nonce)
         self._logger.debug("Generate nonce: %i" % nonce)
         msg = pack_verification_request(nonce)
         await self.send_queue.put((msg, (reader, writer)))
@@ -400,6 +390,13 @@ class P2PServer(Server):
         await self.send_queue.put((msg, (reader, writer)))
 
     async def _receive_verification_response(self, msg, reader, writer):
+        """
+        Verifies whether the challenge is valid.
+
+        If the challenge is verified, add peer to known peer list.
+        If this is a bootstrapper, push message to known peers.
+        On failure close the connection.
+        """
         success = False
         data = unpack_verification_response(msg)
         if (reader, writer) in self._pending_validation:
@@ -426,10 +423,6 @@ class P2PServer(Server):
             await self._send_peer_response(data['peer'])
             if self._bootstrapper is None:
                 await self._send_push_update(data['peer'], self._max_ttl, [(reader, writer)])
-
-    def remove_from_pending_nonces(self, reader, writer):
-        if (reader, writer) in self._pending_validation:
-            self._pending_validation.pop((reader, writer))
 
 
 class APIServer(Server):
