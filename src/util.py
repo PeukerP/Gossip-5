@@ -40,7 +40,7 @@ class Peer(object):
 
 
 class Module(object):
-    def __init__(self, peer: Peer, type_of_data: b""):
+    def __init__(self, peer, type_of_data: b""):
         self.peer = peer
         self.type_of_data = type_of_data
 
