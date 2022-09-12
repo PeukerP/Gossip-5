@@ -51,7 +51,7 @@ class PoW():
         n = nonce.to_bytes(8, 'big')
         for i in range(0xffffffffffffffff):
             res = sha256(n + i.to_bytes(8, 'big')).digest()
-            if res[0:2] == b'00':
+            if res[0:3] == b'000':
                 return i
         return 0
 
@@ -59,7 +59,7 @@ class PoW():
     def verify_pow(nonce: int, challenge: int) -> bool:
         sha = sha256(nonce.to_bytes(8, 'big') +
                      challenge.to_bytes(8, 'big')).digest()
-        if sha[0:2] != b'00':
+        if sha[0:3] != b'000':
             return False
         return True
 
