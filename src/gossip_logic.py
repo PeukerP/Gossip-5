@@ -3,7 +3,7 @@ import logging
 import random
 import time
 
-from util import MessageType, Module, Peer
+from util import MessageType, Module
 
 
 class GossipHandler:
@@ -13,9 +13,9 @@ class GossipHandler:
         """
         This class manages the deliverance of "GOSSIP" type packages as defined in the project specification.
 
-        :param p2p_send_queue: Queue to put messages that have to be sent. Type: (message: bytes, receiver: Peer) where
+        :param p2p_send_queue: Queue to put messages that have to be sent. Type: (message: bytes, receiver) where
         a broadcast to all peers is done with a "None" as peer.
-        :param p2p_recv_queue: Queue to get peer messages from that have to be handled. Type: ((msg), sender: Peer)
+        :param p2p_recv_queue: Queue to get peer messages from that have to be handled. Type: ((msg), sender)
         :param api_send_queue: Like p2p_send_queue but for Modules instead of peers.
         :param api_recv_queue: Like p2p_recv_queue but for Modules instead of peers.
         :param eloop: EventLoop for coroutine execution.
@@ -39,7 +39,7 @@ class GossipHandler:
         self.suppress_circular_messages_time = suppress_circular_messages_time
         self.validation_wait_time = validation_wait_time
 
-    async def __handle_external(self, message_type: MessageType, sender: Peer, message: bytes):
+    async def __handle_external(self, message_type: MessageType, sender, message: bytes):
         """
         Handler to process messages from p2p_recv_queue.
 
@@ -57,12 +57,12 @@ class GossipHandler:
         else:  # MessageType is unknown or illegal
             self.logger.warning("Unknown or illegal MessageType received from other peer(%s): %i", sender, message_type)
 
-    async def __handle_internal(self, message_type: MessageType, sender: Peer, message: bytes):
+    async def __handle_internal(self, message_type: MessageType, sender, message: bytes):
         """
         Handler to process messages from api_recv_queue.
 
         :param message_type: A MessageType object like defined in util.py for Type validation.
-        :param sender: The sender of the message as Peer object.
+        :param sender: The sender of the message as object.
         :param message: The received qpi message as bytes.
         """
         if message_type == MessageType.GOSSIP_NOTIFY:  # Handle GOSSIP_NOTIFY
@@ -118,11 +118,11 @@ class GossipHandler:
         msg_id: bytes = random.randbytes(2)  # Generate new messageID
         await self.__send_notification(ttl, msg_id, data_type, data)  # Forward message
 
-    def __notify(self, sender: Peer, message: bytes):
+    def __notify(self, sender, message: bytes):
         """
         Consumes a received GOSSIP_NOTIFY message and saves the Module to be notified
 
-        :param sender: The sending module as Peer from util.py.
+        :param sender: The sending module peer module.peer from util.py.
         :param message: The received GOSSIP_NOTIFY message as bytes
         """
         data_type = message[6:8]  # Get data type the module wants to be notified of
