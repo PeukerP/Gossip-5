@@ -3,6 +3,7 @@ import re
 import socket
 import logging
 import os
+import time
 from argparse import ArgumentParser
 from configobj import ConfigObj
 
@@ -86,7 +87,11 @@ def main():
 
     # Get the name of the config file to print as name in logs
     logger_name = os.path.splitext(os.path.basename(args.config_file))[0]
-    logging.basicConfig(format='%(levelname)s - ' + logger_name + ' - %(name)s - %(message)s', filename='server.log',
+    log_file_name = "server" + time.strftime("%Y%m%d") + ".log"
+    os.close(os.open('server.log', os.O_RDWR|os.O_CREAT))
+    if not os.path.exists(log_file_name):
+        os.link('server.log', log_file_name)
+    logging.basicConfig(format='%(levelname)s - ' + time.strftime("%d.%m.%Y-%H:%M.%S") +': ' + logger_name + ' - %(name)s - %(message)s', filename=log_file_name,
                         encoding='utf-8', level=logging.DEBUG)
     logger = logging.getLogger("init_main")
 
