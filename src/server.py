@@ -55,9 +55,8 @@ class Server():
         Sends message to up to degree peers from the peer list.
         :param message:
         :param degree:
-        :param exclude_list: Can contain stream tuple or peer to exclude 
+        :param exclude_list: Can contain stream tuple or peer to exclude
         """
-        print("Exclude list", exclude_list)
         async with self.lock_c:
             random_peers = self._connections.get_random_peers(degree)
         for peer in random_peers:
@@ -222,6 +221,7 @@ class P2PServer(Server):
             bootstrapper[0], bootstrapper[1])
         # To check wether the received challenge belongs to a known nonce.
         self._pending_validation = {}  # Stream tuple -> nonce
+        self.lock_p = asyncio.Lock()  # For locking pending validation
         self._peer_threshold = 2  # TODO
 
         if self._bootstrapper is not None:
@@ -248,40 +248,43 @@ class P2PServer(Server):
         try:
             while True:
                 msg, recv = (await self.send_queue.get())
-                if recv is None:
+
+                if isinstance(recv, Peer) or isinstance(recv, tuple):
+                    await self._send_msg(recv, msg)
+                else:
+                    self._logger.debug("Want to send to %s %s" % (recv, msg))
                     await self._send_msg_to_degree(msg, self._degree)
                     # If there are too few peers in the list, try a peer request
                     await self.lock_c.acquire()
-                    if 0 < len(self._connections.get_all_connections()) < self._peer_threshold:
-                        self._logger.debug(
-                            "Try to gather a peer list from a random neighbor")
-                        rp = self._connections.get_random_peers(1)
+                    try:
+                        if 0 < len(self._connections.get_all_connections()) < self._peer_threshold:
+                            self._logger.debug(
+                                "Try to gather a peer list from a random neighbor")
+                            rp = self._connections.get_random_peers(1)
+                            if len(rp) == 0:
+                                # new attempt for bootstrapping
+                                await self._send_gossip_hello(self._bootstrapper)
+                            else:
+                                # Request a peer list from a random peer from the view
+                                await self._send_peer_request(list(rp)[0])  
+                    except e:
+                        # In case of an exception during locked lock
                         self.lock_c.release()
-                        if len(rp) == 0:
-                            # new attempt for bootstrapping
-                            await self._send_gossip_hello(self._bootstrapper)
-                        await self._send_gossip_hello(list(rp)[0])
-                    else:
-                        self.lock_c.release()
-
-                elif isinstance(recv, Peer) or isinstance(recv, tuple):
-                    await self._send_msg(recv, msg)
-                else:
-                    await self._send_msg_to_degree(msg, self._degree, recv)
-
+                        raise e
+                    
+                    self.lock_c.release()
         except:
             self._logger.exception("Failure in sending message")
-            # TODO: Safe?
-            if self.lock_c.locked():
-                self.lock_c.release()
+                
 
     async def _handle_receiving(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """
         If connection is closed, remove reader,writer from pending_nonces
         """
         await super()._handle_receiving(reader, writer)
-        if (reader, writer) in self._pending_validation:
-            self._pending_validation.pop((reader, writer))
+        async with self.lock_p:
+            if (reader, writer) in self._pending_validation:
+                self._pending_validation.pop((reader, writer))
 
     async def _handle_received_message(self, msg, reader, writer, new_peer):
         msg_len, msg_type, data, raw_msg = msg
@@ -294,6 +297,8 @@ class P2PServer(Server):
                 await self._receive_verification_request(data, reader, writer)
             case MessageType.GOSSIP_VERIFICATION_RESPONSE:
                 await self._receive_verification_response(data, reader, writer)
+            case MessageType.GOSSIP_PEER_REQUEST:
+                await self._send_peer_response((reader, writer))
             case MessageType.GOSSIP_PEER_RESPONSE:
                 await self._receive_peer_response(data, msg_len, new_peer)
             case MessageType.GOSSIP_PUSH:
@@ -303,12 +308,19 @@ class P2PServer(Server):
             case _:
                 await self.recv_queue.put((msg, (reader, writer)))
 
+    async def _send_peer_request(self, peer):
+        # Build GOSSIP PEER REQUEST
+        msg = pack_peer_request()
+        # Put message into send_queue
+        await self.send_queue.put((msg, peer))
+
     async def _send_peer_response(self, sender):
         con = []
         async with self.lock_c:
             for peer in self._connections.get_all_connections():
-                if self._connections.get_streams(peer) not in self._pending_validation:
-                    con.append(peer)
+                async with self.lock_p:
+                    if self._connections.get_streams(peer) not in self._pending_validation:
+                        con.append(peer)
 
         msg = pack_peer_response(con, sender)
         await self.send_queue.put((msg, sender))
@@ -345,7 +357,7 @@ class P2PServer(Server):
         await self.send_queue.put((msg, receiver))
 
     async def _send_push_update(self, peer, ttl, exclude_list):
-        print(str(self._connections))
+        self._logger.debug("Current peer list: %s" % str(self._connections))
         msg = pack_push_update(peer, ttl)
         await self.send_queue.put((msg, exclude_list))
 
@@ -374,14 +386,18 @@ class P2PServer(Server):
                 await self._send_push_update(new_peer, data['ttl'] - 1, [(reader, writer)])
 
     async def _send_verification_request(self, reader, writer):
+        await self.lock_p.acquire()
         if (reader, writer) in self._pending_validation:
+            self.lock_p.release()
             self._logger.debug("Nonce was already sent. Answer or reconnect.")
             return
+        self.lock_p.release()
         nonce = PoW.generate_nonce()
         self._logger.debug("Generate nonce: %i" % nonce)
         msg = pack_verification_request(nonce)
         await self.send_queue.put((msg, (reader, writer)))
-        self._pending_validation.update({(reader, writer): nonce})
+        async with self.lock_p:
+            self._pending_validation.update({(reader, writer): nonce})
 
     async def _receive_verification_request(self, msg, reader, writer):
         data = unpack_verification_request(msg)
@@ -399,8 +415,10 @@ class P2PServer(Server):
         """
         success = False
         data = unpack_verification_response(msg)
+        await self.lock_p.acquire()
         if (reader, writer) in self._pending_validation:
             old_nonce = self._pending_validation[(reader, writer)]
+            self.lock_p.release()
             if old_nonce == data['nonce']:
                 if PoW.verify_pow(data['nonce'], data['challenge']):
                     success = True
@@ -412,7 +430,9 @@ class P2PServer(Server):
             else:
                 self._logger.warning(
                     "Nonce differs: %i but expected %i" % (data['nonce'], old_nonce))
+            await self.lock_p.acquire()
             self._pending_validation.pop((reader, writer))
+        self.lock_p.release()
         if not success:
             try:
                 writer.close()

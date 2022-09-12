@@ -54,6 +54,11 @@ def unpack_hello(payload):
     res = {'addr': ip, 'port': port}
     return res
 
+def pack_peer_request():
+    msg = b''
+    msg += pack(">H", MessageType.GOSSIP_PEER_REQUEST)
+    msg = pack(">H", 2 + len(msg)) + msg
+    return msg
 
 def pack_peer_response(neighbors, sender):
     """

@@ -34,7 +34,9 @@ def split_address_into_tuple(address):
 
 
 def parse_config_file(config_file):
-    options = ['cache_size', 'degree', 'bootstrapper', 'p2p_address', 'api_address']
+    res = {}
+    options = ['cache_size', 'degree',
+               'bootstrapper', 'p2p_address', 'api_address', 'p2p_ttl']
     config = ConfigObj(config_file)
     if 'gossip' not in config:
         print("section 'gossip' is missing in .ini file")
@@ -51,7 +53,7 @@ def parse_config_file(config_file):
         if o in config['gossip']:
             globals()[o] = config['gossip'][o]
         else:
-            if o != 'bootstrapper':
+            if o != 'bootstrapper' and o != 'p2p_ttl':
                 print("'%s' is missing in .ini file" % o)
                 exit(1)
 
@@ -60,14 +62,21 @@ def parse_config_file(config_file):
     p2p_addr = split_address_into_tuple(p2p_address)
     api_addr = split_address_into_tuple(api_address)
 
+    res.update({'cache_size': int(cache_size), 'degree': int(degree),
+                'p2p_address': p2p_addr, 'api_address': api_addr})
+
     if 'bootstrapper' in config['gossip']:
         bootstr = split_address_into_tuple(bootstrapper)
 
-        return {'cache_size': int(cache_size), 'degree': int(degree), 'bootstrapper': bootstr,
-                'p2p_address': p2p_addr, 'api_address': api_addr}
+        res.update({'bootstrapper': bootstr})
     else:
-        return {'cache_size': int(cache_size), 'degree': int(degree), 'bootstrapper': None,
-                'p2p_address': p2p_addr, 'api_address': api_addr}
+        res.update({'bootstrapper': None})
+
+    if 'p2p_ttl' in config['gossip']:
+        res.update({'p2p_ttl': p2p_ttl})
+    else:
+        res.update({'p2p_ttl': 5})
+    return res
 
 
 def main():
@@ -81,8 +90,8 @@ def main():
                         type=int, default=60)
     # For GossipHandler.suppress_circular_messages_time
     parser.add_argument('-s', dest='spread_time',
-                        help="Time in seconds to storage a messageID to suppress circulating massages.", type=int,
-                        default=600)
+                        help="Time in seconds to store a messageID to suppress circulating massages.",
+                        type=int, default=600)
     args = parser.parse_args()
 
     # Get the name of the config file to print as name in logs
@@ -124,7 +133,7 @@ def main():
 
     # Start P2P server
     p2p_server = P2PServer('p2p',
-                           configs['p2p_address'][0], configs['p2p_address'][1], 5,
+                           configs['p2p_address'][0], configs['p2p_address'][1], configs['p2p_ttl'],
                            p2p_send_queue, p2p_recv_queue, eloop,
                            configs['cache_size'], configs['degree'], configs['bootstrapper'])
     p2p_server.start()
